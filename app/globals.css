@@ -1,0 +1,78 @@
+@import "tailwindcss";
+@import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700;800;900&family=Roboto+Condensed:wght@400;500;600;700&display=swap');
+
+@font-face {
+  font-family: 'Friz Quadrata TT';
+  src: local('Friz Quadrata TT'), local('FrizQuadrataTT'), local('Friz Quadrata'), local('FrizQuadrata');
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'AR Arial Narrow';
+  src: local('AR Arial Narrow'), local('ARArialNarrow'), local('Arial Narrow'), local('ArialNarrow');
+  font-display: swap;
+}
+
+@theme {
+  --font-friz: "Friz Quadrata TT", "Friz Quadrata", "Cinzel", "Palatino Linotype", "Book Antiqua", Palatino, serif;
+  --font-narrow: "AR Arial Narrow", "Arial Narrow", "Nimbus Sans Narrow", "Roboto Condensed", sans-serif;
+  --font-sans: "AR Arial Narrow", "Arial Narrow", "Nimbus Sans Narrow", "Roboto Condensed", sans-serif;
+}
+
+/* Friz Quadrata TT: Principal UI Font (Window Titles, Item Names, Character Panels, Buttons) */
+.font-friz,
+h1, h2, h3, h4,
+.wow-title,
+button {
+  font-family: "Friz Quadrata TT", "Friz Quadrata", "Cinzel", "Palatino Linotype", "Book Antiqua", Palatino, serif;
+}
+
+/* AR Arial Narrow: Compact Data Font (Tables, Numbers, Metrics, Heat Maps, Currency) */
+.font-narrow,
+.wow-data,
+table,
+th,
+td,
+.font-mono {
+  font-family: "AR Arial Narrow", "Arial Narrow", "Nimbus Sans Narrow", "Roboto Condensed", -apple-system, sans-serif;
+}
+
+body {
+  font-family: "AR Arial Narrow", "Arial Narrow", "Nimbus Sans Narrow", "Roboto Condensed", -apple-system, sans-serif;
+  letter-spacing: 0.015em;
+  background-color: #020617;
+  color: #f8fafc;
+  overflow-x: hidden;
+}
+
+/* 24-column grid for Hourly Heat Maps (12am - 11pm) */
+.grid-cols-24 {
+  display: grid;
+  grid-template-columns: repeat(24, minmax(0, 1fr));
+}
+
+/* Hide scrollbar utility */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* Custom smooth scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #090d16;
+}
+::-webkit-scrollbar-thumb {
+  background: #1e293b;
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #334155;
+}
+
