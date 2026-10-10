@@ -29,12 +29,30 @@ cp .env.example .env.local   # optional — see "Configuration"
 bun run dev
 ```
 
-> **Use Bun, not npm.** `bun.lock` is the committed lockfile and CI installs
-> with `--frozen-lockfile`. Running `npm install` resolves versions
-> independently and produces a `package-lock.json` that is git-ignored precisely
-> so it cannot become a second, conflicting source of truth. If you must use
-> npm locally, run `bun run dev` against the Bun-installed tree rather than
-> committing anything npm writes.
+### npm works too
+
+Everything runs under npm if that is what you already have — the scripts are
+plain commands, not Bun-specific:
+
+```bash
+npm install
+npm run dev
+npm run check     # typecheck + lint + build, same as CI
+```
+
+Two things to know:
+
+- `bun.lock` is the committed lockfile and CI installs with
+  `--frozen-lockfile`, so **Bun is what guarantees you get the exact versions CI
+  verified**. `npm install` resolves versions on its own, so your tree can drift
+  slightly from CI's. Usually harmless; occasionally it surfaces as "works on my
+  machine".
+- `npm install` writes a `package-lock.json`. It is git-ignored on purpose, so it
+  can never become a second, conflicting source of truth — just delete it if you
+  switch back to Bun.
+
+If you want parity with CI and already have Node, `npm install -g bun` takes a
+minute.
 
 The app runs with **no configuration at all**. Without Battle.net credentials it
 serves high-fidelity simulated data, and without R2 it falls back to an

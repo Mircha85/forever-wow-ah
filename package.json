@@ -9,7 +9,7 @@
     "start": "NODE_ENV=production next start",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
-    "check": "bun run typecheck && bun run lint && bun run build",
+    "check": "tsc --noEmit && eslint . && NODE_ENV=production next build",
     "clean": "rm -rf .next"
   },
   "dependencies": {
