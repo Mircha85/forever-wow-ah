@@ -7,7 +7,7 @@
     "build": "NODE_ENV=production next build",
     "start": "NODE_ENV=production next start",
     "lint": "eslint .",
-    "clean": "rm -rf .next .next-dev"
+    "clean": "rm -rf .next"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1145.0",
