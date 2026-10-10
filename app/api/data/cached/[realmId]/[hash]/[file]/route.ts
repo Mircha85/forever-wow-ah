@@ -1,25 +1,56 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { type NextRequest, NextResponse } from 'next/server';
 import { R2Service } from '@/src/services/r2';
 import { BlizzardService } from '@/src/services/blizzard';
 import { AuctionAggregator } from '@/src/services/aggregator';
+import {
+  badRequest,
+  enforceRateLimit,
+  internalError,
+  parseItemId,
+  parseRealmId,
+} from '@/src/utils/apiGuard';
+
+/**
+ * Per-item binary blob.
+ *
+ * On a cache miss this route fetches a full Battle.net snapshot and can
+ * generate a single item record on demand. Both are outbound, billable work
+ * reachable with an arbitrary itemId, so it is rate limited here too — the
+ * per-item cache miss is a cheap way for one client to force repeated
+ * aggregation.
+ *
+ * The limit is deliberately looser than pipeline/run: this is the dashboard's
+ * normal read path and real users page through many items.
+ */
+
+/** 60 requests per minute per client. */
+const LIMIT = 60;
+const WINDOW_MS = 60_000;
 
 export async function GET(
   req: NextRequest,
   { params }: { params: Promise<{ realmId: string; hash: string; file: string }> }
 ) {
+  const limited = enforceRateLimit(req, 'item-bin', LIMIT, WINDOW_MS);
+  if (limited) return limited;
+
   try {
     const { realmId, file } = await params;
-    const connectedRealmId = parseInt(realmId, 10) || 4401;
-    // Strip .bin if present
-    const cleanId = file.replace(/\.bin$/i, '');
-    const itemId = parseInt(cleanId, 10);
 
-    if (isNaN(itemId)) {
-      return new NextResponse('Invalid itemId parameter', { status: 400 });
+    const parsedRealmId = parseRealmId(realmId);
+    if (parsedRealmId === null) {
+      return badRequest('realmId must be a positive integer');
+    }
+
+    // The [file] segment carries "<itemId>.bin"; strip the extension explicitly
+    // instead of relying on parseInt, which would happily accept "12abc".
+    const itemId = parseItemId(file.replace(/\.bin$/i, ''));
+    if (itemId === null) {
+      return badRequest('file must be <itemId>.bin with a positive integer id');
     }
 
     const r2 = new R2Service();
-    const itemKey = R2Service.generateItemKey(connectedRealmId, itemId);
+    const itemKey = R2Service.generateItemKey(parsedRealmId, itemId);
 
     let buffer = await r2.getBin(itemKey);
 
@@ -27,8 +58,8 @@ export async function GET(
     if (!buffer) {
       try {
         const blizzard = new BlizzardService();
-        const { snapshot } = await blizzard.fetchAuctionSnapshot(connectedRealmId);
-        await AuctionAggregator.processSnapshot(connectedRealmId, snapshot, r2);
+        const { snapshot } = await blizzard.fetchAuctionSnapshot(parsedRealmId);
+        await AuctionAggregator.processSnapshot(parsedRealmId, snapshot, r2);
         buffer = await r2.getBin(itemKey);
       } catch (e) {
         console.warn(`[API] Snapshot processing fallback for item #${itemId}:`, e);
@@ -37,7 +68,11 @@ export async function GET(
 
     // If still not present in buffer, generate single item record directly on-demand
     if (!buffer) {
-      buffer = await AuctionAggregator.generateSingleItemBin(connectedRealmId, itemId, r2);
+      buffer = await AuctionAggregator.generateSingleItemBin(parsedRealmId, itemId, r2);
+    }
+
+    if (!buffer) {
+      return badRequest(`No data available for item #${itemId}`);
     }
 
     return new NextResponse(new Uint8Array(buffer), {
@@ -50,7 +85,6 @@ export async function GET(
       },
     });
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : String(err);
-    return new NextResponse(`Failed to retrieve item.bin: ${message}`, { status: 500 });
+    return internalError(err, 'data/cached/[file]');
   }
 }

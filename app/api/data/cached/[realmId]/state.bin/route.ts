@@ -1,15 +1,44 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { type NextRequest, NextResponse } from 'next/server';
 import { R2Service } from '@/src/services/r2';
 import { BlizzardService } from '@/src/services/blizzard';
 import { AuctionAggregator } from '@/src/services/aggregator';
+import {
+  badRequest,
+  enforceRateLimit,
+  internalError,
+  parseRealmId,
+} from '@/src/utils/apiGuard';
+
+/**
+ * Full realm state blob.
+ *
+ * A cache miss here fetches and processes an entire snapshot, so the route is
+ * rate limited like the per-item one. Slightly looser budget: the dashboard
+ * requests this once per realm on load and on every pipeline completion.
+ */
+
+/** 30 requests per minute per client. */
+const LIMIT = 30;
+const WINDOW_MS = 60_000;
 
 export async function GET(
   req: NextRequest,
   { params }: { params: Promise<{ realmId: string }> }
 ) {
+  const limited = enforceRateLimit(req, 'state-bin', LIMIT, WINDOW_MS);
+  if (limited) return limited;
+
   try {
     const { realmId } = await params;
-    const connectedRealmId = parseInt(realmId, 10) || 4401;
+
+    // Previously `parseInt(realmId, 10) || 4401`, which turned any junk input
+    // into a valid request against the default realm. The segment is always
+    // present in the route, so an unparseable value is a client error.
+    const connectedRealmId = parseRealmId(realmId);
+    if (connectedRealmId === null) {
+      return badRequest('realmId must be a positive integer');
+    }
+
     const r2 = new R2Service();
     const stateKey = R2Service.generateStateKey(connectedRealmId);
 
@@ -37,7 +66,6 @@ export async function GET(
       },
     });
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : String(err);
-    return new NextResponse(`Failed to retrieve state.bin: ${message}`, { status: 500 });
+    return internalError(err, 'data/cached state.bin');
   }
 }

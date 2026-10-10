@@ -2,7 +2,6 @@
 
 import React, { useState, useMemo } from 'react';
 import { WoWMoney } from './WoWMoney';
-import { CONNECTED_REALMS } from '../data/itemsCatalog';
 
 // TODO: Replace with live WoW: Forever realm list and real-time ingestion when moving to production
 

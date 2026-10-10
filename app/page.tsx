@@ -2,9 +2,8 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import {
-  DecodedStateBin,
-  DecodedItemBin,
-  StateItemSummary,
+  type DecodedStateBin,
+  type DecodedItemBin,
 } from '@/src/types/auction';
 import { BinaryDecoder } from '@/src/utils/binDecoder';
 import {
@@ -33,8 +32,6 @@ import {
   CheckCircle2,
   HardDrive,
   Info,
-  SlidersHorizontal,
-  ExternalLink,
   Star,
   X,
 } from 'lucide-react';
@@ -395,7 +392,7 @@ export default function WowForeverAhDashboard() {
       }
     };
 
-    execute();
+    void execute();
 
     return () => {
       ignore = true;
@@ -437,7 +434,7 @@ export default function WowForeverAhDashboard() {
         if (ignore) return;
         await loadAllRealmsStates();
       };
-      execute();
+      void execute();
     }
     return () => {
       ignore = true;
@@ -1220,11 +1217,9 @@ export default function WowForeverAhDashboard() {
                 
                 // Calculate total crafting cost
                 let totalCost = 0;
-                let hasAllPrices = true;
-                
+
                 recipe.ingredients.forEach((ing) => {
                   const ingPrice = getItemPrice(ing.itemId);
-                  if (ingPrice === 0) hasAllPrices = false;
                   totalCost += ingPrice * ing.quantity;
                 });
 
@@ -2159,7 +2154,7 @@ export default function WowForeverAhDashboard() {
                                     <button
                                       onClick={(e) => {
                                         e.stopPropagation();
-                                        handleSelectItem(item.itemId);
+                                        void handleSelectItem(item.itemId);
                                       }}
                                       className="font-friz px-3 py-1.5 text-[12.2px] font-semibold rounded-md bg-slate-800 hover:bg-slate-700 text-slate-200 transition-colors cursor-pointer inline-flex items-center gap-1.5"
                                     >
@@ -2232,7 +2227,7 @@ export default function WowForeverAhDashboard() {
           isFavorited={favorites.includes(selectedItemBin.itemId)}
           onToggleFavorite={() => toggleFavorite(selectedItemBin.itemId)}
           onSelectRealm={(targetRealmId) => {
-            handleSelectItem(selectedItemBin.itemId, targetRealmId);
+            void handleSelectItem(selectedItemBin.itemId, targetRealmId);
           }}
         />
       )}
@@ -2252,7 +2247,7 @@ export default function WowForeverAhDashboard() {
           currentRealmId={selectedRealmId}
           onClose={() => setShowPipelineModal(false)}
           onPipelineComplete={() => {
-            loadStateBin(selectedRealmId);
+            void loadStateBin(selectedRealmId);
           }}
         />
       )}

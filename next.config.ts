@@ -3,7 +3,10 @@ import type {NextConfig} from 'next';
 const nextConfig: NextConfig = {
   reactStrictMode: true,
   eslint: {
-    ignoreDuringBuilds: true,
+    // Lint is a real gate now: the flat config carries TypeScript-aware rules,
+    // so keeping `ignoreDuringBuilds: true` would have thrown that away.
+    // CI also runs `bun run lint` explicitly.
+    ignoreDuringBuilds: false,
   },
   typescript: {
     ignoreBuildErrors: false,

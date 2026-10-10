@@ -1,8 +1,8 @@
 'use client';
 
 import React, { useMemo } from 'react';
-import { X, Download, Binary, CheckCircle2, ShieldCheck } from 'lucide-react';
-import { DecodedItemBin } from '../types/auction';
+import { X, Download, Binary, CheckCircle2 } from 'lucide-react';
+import { type DecodedItemBin } from '../types/auction';
 
 interface BinaryInspectorModalProps {
   itemData: DecodedItemBin;

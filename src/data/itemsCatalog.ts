@@ -1,4 +1,4 @@
-import { WowItemMetadata } from '../types/auction';
+import { type WowItemMetadata } from '../types/auction';
 
 export const WOW_ITEMS_CATALOG: Record<number, WowItemMetadata> = {
   13468: {

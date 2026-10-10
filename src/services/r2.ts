@@ -166,7 +166,14 @@ export class R2Service {
       });
 
       return buffer;
-    } catch (err) {
+    } catch (err: unknown) {
+      // Falling back to "not cached" is the correct behaviour for a cache miss,
+      // but a genuine S3/R2 failure (bad credentials, network, wrong bucket)
+      // used to be swallowed silently, which made production misconfiguration
+      // almost impossible to diagnose. The unconfigured case already returns
+      // early via `hasCloudflareR2()`, so reaching here is worth a log line.
+      const reason = err instanceof Error ? err.message : String(err);
+      console.warn(`[R2] getBin("${key}") failed, treating as cache miss: ${reason}`);
       return null;
     }
   }

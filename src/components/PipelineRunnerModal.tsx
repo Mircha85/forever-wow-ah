@@ -13,7 +13,7 @@ import {
   FileCode2,
   HardDrive,
 } from 'lucide-react';
-import { AggregationResult } from '../services/aggregator';
+import { type AggregationResult } from '../services/aggregator';
 
 interface PipelineRunnerModalProps {
   currentRealmId: number;
