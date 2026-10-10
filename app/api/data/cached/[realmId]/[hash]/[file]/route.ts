@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { type NextRequest, NextResponse } from 'next/server';
 import { R2Service } from '@/src/services/r2';
 import { BlizzardService } from '@/src/services/blizzard';
 import { AuctionAggregator } from '@/src/services/aggregator';

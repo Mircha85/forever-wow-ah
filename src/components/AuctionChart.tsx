@@ -1,19 +1,22 @@
 'use client';
 
 import React, { useState, useRef, useMemo } from 'react';
-import { HistoryPoint, HourlyDelta } from '../types/auction';
+import { type HistoryPoint, type HourlyDelta } from '../types/auction';
 import { WoWMoney } from './WoWMoney';
 
 interface AuctionChartProps {
   dailyHistory: HistoryPoint[];
   hourlyDeltas: HourlyDelta[];
-  itemName: string;
+  /**
+   * Accepted for context at the call site but not currently rendered.
+   * Optional so new callers are not forced to supply a value we ignore.
+   */
+  itemName?: string;
 }
 
 export const AuctionChart: React.FC<AuctionChartProps> = ({
   dailyHistory,
   hourlyDeltas,
-  itemName,
 }) => {
   const [timeframe, setTimeframe] = useState<'24h' | '7d' | '14d'>('14d');
   const [showMin, setShowMin] = useState(true);

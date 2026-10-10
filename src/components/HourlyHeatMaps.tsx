@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useMemo } from 'react';
-import { HourlyDelta } from '../types/auction';
+import { type HourlyDelta } from '../types/auction';
 import { WoWMoney } from './WoWMoney';
 import { ChevronDown, ChevronUp, Clock, Calendar } from 'lucide-react';
 

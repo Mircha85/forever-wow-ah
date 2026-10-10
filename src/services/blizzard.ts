@@ -1,4 +1,4 @@
-import { BlizzardAuctionSnapshot, BlizzardAuctionItem } from '../types/auction';
+import { type BlizzardAuctionSnapshot, type BlizzardAuctionItem } from '../types/auction';
 
 export interface BlizzardConfig {
   clientId?: string;

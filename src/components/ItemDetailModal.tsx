@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
-import { DecodedItemBin, TIME_LEFT_LABELS } from '../types/auction';
+import { type DecodedItemBin, TIME_LEFT_LABELS } from '../types/auction';
 import { getItemMetadata, getQualityColor, getQualityBorderColor, CONNECTED_REALMS } from '../data/itemsCatalog';
 import { WoWMoney } from './WoWMoney';
 import { AuctionChart } from './AuctionChart';

@@ -3,7 +3,7 @@ import { BlizzardService } from '@/src/services/blizzard';
 import { R2Service } from '@/src/services/r2';
 import { CONNECTED_REALMS } from '@/src/data/itemsCatalog';
 
-export async function GET() {
+export function GET() {
   const blizzard = new BlizzardService();
   const r2 = new R2Service();
 

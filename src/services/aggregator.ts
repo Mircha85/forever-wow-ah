@@ -1,10 +1,10 @@
 import {
-  BlizzardAuctionItem,
-  BlizzardAuctionSnapshot,
-  StateItemSummary,
-  HistoryPoint,
-  HourlyDelta,
-  ActiveAuctionLot,
+  type BlizzardAuctionItem,
+  type BlizzardAuctionSnapshot,
+  type StateItemSummary,
+  type HistoryPoint,
+  type HourlyDelta,
+  type ActiveAuctionLot,
   TIME_LEFT_MAP,
 } from '../types/auction';
 import { BinaryEncoder } from './encoder';

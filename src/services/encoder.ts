@@ -1,10 +1,8 @@
 import {
-  DecodedStateBin,
-  DecodedItemBin,
-  StateItemSummary,
-  HistoryPoint,
-  HourlyDelta,
-  ActiveAuctionLot,
+  type StateItemSummary,
+  type HistoryPoint,
+  type HourlyDelta,
+  type ActiveAuctionLot,
 } from '../types/auction';
 
 export const MAGIC_UNDR = 0x554e4452; // 'UNDR' in ASCII
