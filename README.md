@@ -29,6 +29,13 @@ cp .env.example .env.local   # optional — see "Configuration"
 bun run dev
 ```
 
+> **Use Bun, not npm.** `bun.lock` is the committed lockfile and CI installs
+> with `--frozen-lockfile`. Running `npm install` resolves versions
+> independently and produces a `package-lock.json` that is git-ignored precisely
+> so it cannot become a second, conflicting source of truth. If you must use
+> npm locally, run `bun run dev` against the Bun-installed tree rather than
+> committing anything npm writes.
+
 The app runs with **no configuration at all**. Without Battle.net credentials it
 serves high-fidelity simulated data, and without R2 it falls back to an
 in-process memory cache, so you can develop and demo the full UI offline.
