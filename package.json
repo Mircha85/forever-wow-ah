@@ -9,13 +9,15 @@
     "start": "NODE_ENV=production next start",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
-    "check": "bun run typecheck && bun run lint && bun run build",
+    "check": "tsc --noEmit && eslint . && NODE_ENV=production next build",
     "clean": "rm -rf .next"
+  },
+  "engines": {
+    "node": ">=20.9.0"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1145.0",
     "@google/genai": "^2.4.0",
-    "@hookform/resolvers": "^5.2.1",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "lucide-react": "^0.553.0",
