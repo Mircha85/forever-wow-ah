@@ -17,24 +17,23 @@ with `ArrayBuffer` / `DataView`. No JSON parsing on the hot path.
 | Framework | Next.js 15 (App Router) + React 19           |
 | Language  | TypeScript 5.9, `strict: true`               |
 | Styling   | Tailwind CSS 4                               |
-| Runtime   | [Bun](https://bun.sh)                        |
+| Runtime   | Node.js >= 20.9                              |
+| Tooling   | npm                                          |
 | Storage   | Cloudflare R2 (S3-compatible), in-memory fallback |
 | Upstream  | Battle.net REST API (OAuth2 `client_credentials`) |
 
 ## Getting started
 
 ```bash
-bun install
+npm install
 cp .env.example .env.local   # optional — see "Configuration"
-bun run dev
+npm run dev
 ```
 
-> **Use Bun, not npm.** `bun.lock` is the committed lockfile and CI installs
-> with `--frozen-lockfile`. Running `npm install` resolves versions
-> independently and produces a `package-lock.json` that is git-ignored precisely
-> so it cannot become a second, conflicting source of truth. If you must use
-> npm locally, run `bun run dev` against the Bun-installed tree rather than
-> committing anything npm writes.
+npm is the only package manager here. `package-lock.json` is committed and CI
+installs with `npm ci`, so you get the exact dependency tree CI verified. Bun,
+Yarn and pnpm lockfiles are git-ignored so a stray one cannot quietly become a
+second source of truth.
 
 The app runs with **no configuration at all**. Without Battle.net credentials it
 serves high-fidelity simulated data, and without R2 it falls back to an
@@ -42,14 +41,14 @@ in-process memory cache, so you can develop and demo the full UI offline.
 
 ### Commands
 
-| Command          | What it does                                  |
-| ---------------- | --------------------------------------------- |
-| `bun run dev`    | Dev server with HMR                           |
-| `bun run build`  | Production build (runs typecheck + lint)      |
-| `bun run start`  | Serve the production build                    |
-| `bun run typecheck` | `tsc --noEmit`                             |
-| `bun run lint`   | ESLint (Next + TypeScript-aware rules)        |
-| `bun run check`  | typecheck → lint → build, the CI entry point  |
+| Command             | What it does                                  |
+| ------------------- | --------------------------------------------- |
+| `npm run dev`       | Dev server with HMR                           |
+| `npm run build`     | Production build (runs typecheck + lint)      |
+| `npm run start`     | Serve the production build                    |
+| `npm run typecheck` | `tsc --noEmit`                                |
+| `npm run lint`      | ESLint (Next + TypeScript-aware rules)        |
+| `npm run check`     | typecheck → lint → build, same as CI          |
 
 ## Configuration
 
@@ -160,12 +159,14 @@ client IP, returning `429` with a `Retry-After` header when over budget.
 
 ## Quality gates
 
-CI runs on every push and PR: `bun install --frozen-lockfile`, then
-`bun run typecheck`, `bun run lint`, `bun run build`. `next build` also runs ESLint
-and TypeScript itself, so a red build and a red CI agree.
+CI runs on every push and PR: `npm ci`, then `npm run typecheck`, `npm run lint`,
+`npm run build`, and finally `git diff --exit-code` so a generated artifact can
+never slip in. `next build` also runs ESLint and TypeScript itself, so a red
+build and a red CI agree. Locally, `npm run check` is the same thing in one
+command.
 
 ## Deploying
 
-Any Node or Bun host that can run Next.js works. The code was scaffolded for
+Any host that runs Next.js on Node >= 20.9 works. The code was scaffolded for
 Google AI Studio and targets Cloud Run; nothing in the app is Cloud-Run-specific
 beyond the `APP_URL` variable used for self-referential links.

@@ -19,25 +19,26 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: oven-sh/setup-bun@v2
+      - uses: actions/setup-node@v4
         with:
-          bun-version: 1.4.3
+          node-version: 22
+          cache: npm
 
-      # Fails if bun.lock is out of date with respect to package.json, instead of
-      # silently resolving something different from what was committed.
+      # Fails if package-lock.json is out of date with respect to package.json,
+      # instead of silently resolving something different from what was committed.
       - name: Install dependencies
-        run: bun install --frozen-lockfile
+        run: npm ci
 
       - name: Typecheck
-        run: bun run typecheck
+        run: npm run typecheck
 
       - name: Lint
-        run: bun run lint
+        run: npm run lint
 
       - name: Build
-        run: bun run build
+        run: npm run build
 
-      # Guards against the exact regression this setup was missing before: a
-      # generated artifact (tsconfig.tsbuildinfo) being committed.
+      # Guards against generated artifacts (tsconfig.tsbuildinfo, .next, …) ever
+      # being committed.
       - name: Check working tree is clean
         run: git diff --exit-code

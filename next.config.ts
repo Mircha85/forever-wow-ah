@@ -5,7 +5,7 @@ const nextConfig: NextConfig = {
   eslint: {
     // Lint is a real gate now: the flat config carries TypeScript-aware rules,
     // so keeping `ignoreDuringBuilds: true` would have thrown that away.
-    // CI also runs `bun run lint` explicitly.
+    // CI also runs `npm run lint` explicitly.
     ignoreDuringBuilds: false,
   },
   typescript: {
