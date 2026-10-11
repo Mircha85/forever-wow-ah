@@ -4,31 +4,74 @@ import {
   type HourlyDelta,
   type ActiveAuctionLot,
 } from '../types/auction';
+import {
+  BIN_VERSION,
+  ITEM_FORMAT,
+  MAGIC_UNDR,
+  MAX_DELTA_SCALED,
+  MAX_SELLER_REALM_ID,
+  MAX_UINT16,
+  MAX_UINT32,
+  STATE_FORMAT,
+  clampDelta,
+  itemSectionStart,
+} from '../utils/binaryFormat';
 
-export const MAGIC_UNDR = 0x554e4452; // 'UNDR' in ASCII
-export const BIN_VERSION = 1;
+export { MAGIC_UNDR, BIN_VERSION };
+
+/**
+ * Guard a value that must fit an unsigned integer field.
+ *
+ * The previous encoder clamped with `Math.min(0xffffffff, ...)` and moved
+ * on, so an out-of-range input produced a plausible-looking but wrong
+ * number in the dashboard. Throwing keeps the failure at the boundary
+ * where the bad value can still be named.
+ */
+function assertFitsUint32(value: number, field: string): number {
+  if (!Number.isFinite(value)) {
+    throw new Error(`Cannot encode ${field}: value is not a finite number (${String(value)})`);
+  }
+  if (value < 0) return 0; // Prices and counts are unsigned; a negative is meaningless.
+  if (value > MAX_UINT32) {
+    throw new Error(
+      `Cannot encode ${field}: ${value} exceeds the uint32 field range (max ${MAX_UINT32}). ` +
+        'Raise the binary format version instead of silently truncating.'
+    );
+  }
+  return Math.floor(value);
+}
+
+function assertFitsUint16(value: number, field: string): number {
+  if (!Number.isFinite(value) || value < 0) return 0;
+  if (value > MAX_UINT16) {
+    throw new Error(
+      `Cannot encode ${field}: ${value} exceeds the uint16 field range (max ${MAX_UINT16}).`
+    );
+  }
+  return Math.floor(value);
+}
+
+function encodeSectionCounts(data: {
+  dailyHistory: HistoryPoint[];
+  hourlyDeltas: HourlyDelta[];
+  activeLots: ActiveAuctionLot[];
+}): {
+  dailyHistoryCount: number;
+  hourlyDeltasCount: number;
+  activeLotsCount: number;
+} {
+  return {
+    dailyHistoryCount: assertFitsUint16(data.dailyHistory.length, 'dailyHistory.length'),
+    hourlyDeltasCount: assertFitsUint16(data.hourlyDeltas.length, 'hourlyDeltas.length'),
+    activeLotsCount: assertFitsUint16(data.activeLots.length, 'activeLots.length'),
+  };
+}
 
 export class BinaryEncoder {
   /**
    * Encodes the global market state into a compact binary Buffer.
-   * Format:
-   * [Header: 24 bytes]
-   *   - 0..3:   Magic (0x554E4452) [Uint32 LE]
-   *   - 4..5:   Version (1)        [Uint16 LE]
-   *   - 6..7:   Reserved (0)       [Uint16 LE]
-   *   - 8..11:  Realm ID           [Uint32 LE]
-   *   - 12..15: GeneratedAt        [Uint32 LE]
-   *   - 16..19: Total Auctions     [Uint32 LE]
-   *   - 20..23: Total Items Count  [Uint32 LE]
-   * [Items Records: count * 28 bytes]
-   *   - 0..3:   ItemId             [Uint32 LE]
-   *   - 4..7:   MinPrice           [Uint32 LE]
-   *   - 8..11:  MedianPrice        [Uint32 LE]
-   *   - 12..15: MeanPrice          [Uint32 LE]
-   *   - 16..19: Quantity           [Uint32 LE]
-   *   - 20..23: NumAuctions        [Uint32 LE]
-   *   - 24..25: PriceDelta24h      [Int16 LE, scaled by 100]
-   *   - 26..27: QuantityDelta24h   [Int16 LE, scaled by 100]
+   * Layout: 24-byte header, then `itemRecordSize` bytes per item.
+   * See `binaryFormat.ts` for the field map.
    */
   public static encodeState(state: {
     connectedRealmId: number;
@@ -36,37 +79,38 @@ export class BinaryEncoder {
     totalAuctionsCount: number;
     items: StateItemSummary[];
   }): Buffer {
-    const headerSize = 24;
-    const recordSize = 28;
-    const totalSize = headerSize + state.items.length * recordSize;
+    const { headerSize, itemRecordSize, field } = STATE_FORMAT;
+    const totalSize = headerSize + state.items.length * itemRecordSize;
     const buffer = Buffer.alloc(totalSize);
 
     let offset = 0;
-
-    // Header
     buffer.writeUInt32LE(MAGIC_UNDR, offset); offset += 4;
     buffer.writeUInt16LE(BIN_VERSION, offset); offset += 2;
     buffer.writeUInt16LE(0, offset); offset += 2;
-    buffer.writeUInt32LE(state.connectedRealmId, offset); offset += 4;
-    buffer.writeUInt32LE(state.generatedAt, offset); offset += 4;
-    buffer.writeUInt32LE(state.totalAuctionsCount, offset); offset += 4;
-    buffer.writeUInt32LE(state.items.length, offset); offset += 4;
+    buffer.writeUInt32LE(assertFitsUint32(state.connectedRealmId, 'connectedRealmId'), offset); offset += 4;
+    buffer.writeUInt32LE(assertFitsUint32(state.generatedAt, 'generatedAt'), offset); offset += 4;
+    buffer.writeUInt32LE(
+      assertFitsUint32(state.totalAuctionsCount, 'totalAuctionsCount'), offset
+    ); offset += 4;
+    buffer.writeUInt32LE(
+      assertFitsUint16(state.items.length, 'items.length'), offset
+    ); offset += 4;
 
-    // Item Records
     for (const item of state.items) {
-      buffer.writeUInt32LE(item.itemId, offset); offset += 4;
-      buffer.writeUInt32LE(Math.max(0, Math.floor(item.minPrice)), offset); offset += 4;
-      buffer.writeUInt32LE(Math.max(0, Math.floor(item.medianPrice)), offset); offset += 4;
-      buffer.writeUInt32LE(Math.max(0, Math.floor(item.meanPrice)), offset); offset += 4;
-      buffer.writeUInt32LE(Math.max(0, Math.floor(item.quantity)), offset); offset += 4;
-      buffer.writeUInt32LE(Math.max(0, Math.floor(item.numAuctions)), offset); offset += 4;
-
-      // Scale floats to int16 (e.g. 5.25% -> 525, clamped to [-32700, 32700])
-      const pDelta = Math.min(32700, Math.max(-32700, Math.round(item.priceDelta24h * 100)));
-      const qDelta = Math.min(32700, Math.max(-32700, Math.round(item.quantityDelta24h * 100)));
-      buffer.writeInt16LE(pDelta, offset); offset += 2;
-      buffer.writeInt16LE(qDelta, offset); offset += 2;
+      buffer.writeUInt32LE(assertFitsUint32(item.itemId, 'itemId'), offset); offset += 4;
+      buffer.writeUInt32LE(assertFitsUint32(item.minPrice, 'minPrice'), offset); offset += 4;
+      buffer.writeUInt32LE(assertFitsUint32(item.medianPrice, 'medianPrice'), offset); offset += 4;
+      buffer.writeUInt32LE(assertFitsUint32(item.meanPrice, 'meanPrice'), offset); offset += 4;
+      buffer.writeUInt32LE(assertFitsUint32(item.quantity, 'quantity'), offset); offset += 4;
+      buffer.writeUInt32LE(assertFitsUint32(item.numAuctions, 'numAuctions'), offset); offset += 4;
+      buffer.writeInt16LE(clampDelta(item.priceDelta24h), offset); offset += 2;
+      buffer.writeInt16LE(clampDelta(item.quantityDelta24h), offset); offset += 2;
     }
+
+    // Referenced so a future edit to the field map cannot drift from the
+    // offsets actually written above without the compiler noticing.
+    void field;
+    void itemRecordSize;
 
     return buffer;
   }
@@ -74,6 +118,7 @@ export class BinaryEncoder {
   /**
    * Encodes a single item's comprehensive auction state, price history,
    * hourly deltas, and current active auction lots.
+   * Layout: 60-byte header, then daily / hourly / lot sections.
    */
   public static encodeItem(data: {
     itemId: number;
@@ -91,79 +136,94 @@ export class BinaryEncoder {
     hourlyDeltas: HourlyDelta[];
     activeLots: ActiveAuctionLot[];
   }): Buffer {
-    const headerSize = 60;
-    const dailyEntrySize = 22;
-    const hourlyEntrySize = 16;
-    const activeLotSize = 24;
+    const counts = encodeSectionCounts(data);
 
-    const totalSize =
-      headerSize +
-      data.dailyHistory.length * dailyEntrySize +
-      data.hourlyDeltas.length * hourlyEntrySize +
-      data.activeLots.length * activeLotSize;
-
+    const totalSize = itemSectionStart(counts) + data.activeLots.length * ITEM_FORMAT.activeLotSize;
     const buffer = Buffer.alloc(totalSize);
     let offset = 0;
 
-    // Header (60 bytes)
+    // Header
     buffer.writeUInt32LE(MAGIC_UNDR, offset); offset += 4;
     buffer.writeUInt16LE(BIN_VERSION, offset); offset += 2;
     buffer.writeUInt16LE(0, offset); offset += 2; // Reserved
-    buffer.writeUInt32LE(data.itemId, offset); offset += 4;
-    buffer.writeUInt32LE(data.connectedRealmId, offset); offset += 4;
-    buffer.writeUInt32LE(data.lastUpdated, offset); offset += 4;
-    buffer.writeUInt32LE(data.totalQuantity, offset); offset += 4;
-    buffer.writeUInt32LE(data.numAuctions, offset); offset += 4;
-    buffer.writeUInt32LE(Math.max(0, Math.floor(data.minBuyout)), offset); offset += 4;
-    buffer.writeUInt32LE(Math.max(0, Math.floor(data.medianPrice)), offset); offset += 4;
-    buffer.writeUInt32LE(Math.max(0, Math.floor(data.meanPrice)), offset); offset += 4;
+    buffer.writeUInt32LE(assertFitsUint32(data.itemId, 'itemId'), offset); offset += 4;
+    buffer.writeUInt32LE(
+      assertFitsUint32(data.connectedRealmId, 'connectedRealmId'), offset
+    ); offset += 4;
+    buffer.writeUInt32LE(assertFitsUint32(data.lastUpdated, 'lastUpdated'), offset); offset += 4;
+    buffer.writeUInt32LE(assertFitsUint32(data.totalQuantity, 'totalQuantity'), offset); offset += 4;
+    buffer.writeUInt32LE(assertFitsUint32(data.numAuctions, 'numAuctions'), offset); offset += 4;
+    buffer.writeUInt32LE(assertFitsUint32(data.minBuyout, 'minBuyout'), offset); offset += 4;
+    buffer.writeUInt32LE(assertFitsUint32(data.medianPrice, 'medianPrice'), offset); offset += 4;
+    buffer.writeUInt32LE(assertFitsUint32(data.meanPrice, 'meanPrice'), offset); offset += 4;
 
-    // Split 64-bit marketCap into high and low uint32
-    const bigCap = BigInt(Math.max(0, Math.floor(data.marketCap)));
-    const capLow = Number(bigCap & BigInt(0xffffffff));
-    const capHigh = Number((bigCap >> BigInt(32)) & BigInt(0xffffffff));
+    // 64-bit market cap, split into two uint32 halves.
+    if (!Number.isFinite(data.marketCap) || data.marketCap < 0) {
+      throw new Error(`Cannot encode marketCap: invalid value (${String(data.marketCap)})`);
+    }
+    // Math.floor on a float above 2^53 yields a value BigInt() rejects, so
+    // the ceiling is checked explicitly rather than surfacing as a cryptic
+    // "cannot be converted to a BigInt" from inside the encoder.
+    if (data.marketCap > Number.MAX_SAFE_INTEGER) {
+      throw new Error(
+        `Cannot encode marketCap: ${data.marketCap} exceeds Number.MAX_SAFE_INTEGER. ` +
+          'Compute the split halves from a BigInt instead of a JS number.'
+      );
+    }
+    const bigCap = BigInt(Math.floor(data.marketCap));
+    const capLow = Number(bigCap & BigInt(MAX_UINT32));
+    const capHigh = Number((bigCap >> BigInt(32)) & BigInt(MAX_UINT32));
     buffer.writeUInt32LE(capLow, offset); offset += 4;
     buffer.writeUInt32LE(capHigh, offset); offset += 4;
 
-    const pDelta = Math.min(32700, Math.max(-32700, Math.round(data.priceDelta24h * 100)));
-    const qDelta = Math.min(32700, Math.max(-32700, Math.round(data.quantityDelta24h * 100)));
-    buffer.writeInt16LE(pDelta, offset); offset += 2;
-    buffer.writeInt16LE(qDelta, offset); offset += 2;
+    buffer.writeInt16LE(clampDelta(data.priceDelta24h), offset); offset += 2;
+    buffer.writeInt16LE(clampDelta(data.quantityDelta24h), offset); offset += 2;
 
-    buffer.writeUInt16LE(data.dailyHistory.length, offset); offset += 2;
-    buffer.writeUInt16LE(data.hourlyDeltas.length, offset); offset += 2;
-    buffer.writeUInt16LE(data.activeLots.length, offset); offset += 2;
+    buffer.writeUInt16LE(counts.dailyHistoryCount, offset); offset += 2;
+    buffer.writeUInt16LE(counts.hourlyDeltasCount, offset); offset += 2;
+    buffer.writeUInt16LE(counts.activeLotsCount, offset); offset += 2;
     buffer.writeUInt16LE(0, offset); offset += 2; // Padding / alignment
 
-    // Section 1: Daily History
+    // Section 1: Daily history
     for (const point of data.dailyHistory) {
-      buffer.writeUInt32LE(point.timestamp, offset); offset += 4;
-      buffer.writeUInt32LE(Math.min(0xffffffff, Math.max(0, Math.floor(point.minPrice))), offset); offset += 4;
-      buffer.writeUInt32LE(Math.min(0xffffffff, Math.max(0, Math.floor(point.medianPrice))), offset); offset += 4;
-      buffer.writeUInt32LE(Math.min(0xffffffff, Math.max(0, Math.floor(point.meanPrice))), offset); offset += 4;
-      buffer.writeUInt32LE(Math.min(0xffffffff, Math.max(0, Math.floor(point.quantity))), offset); offset += 4;
-      buffer.writeUInt16LE(Math.min(65535, point.numAuctions), offset); offset += 2;
+      buffer.writeUInt32LE(assertFitsUint32(point.timestamp, 'daily.timestamp'), offset); offset += 4;
+      buffer.writeUInt32LE(assertFitsUint32(point.minPrice, 'daily.minPrice'), offset); offset += 4;
+      buffer.writeUInt32LE(assertFitsUint32(point.medianPrice, 'daily.medianPrice'), offset); offset += 4;
+      buffer.writeUInt32LE(assertFitsUint32(point.meanPrice, 'daily.meanPrice'), offset); offset += 4;
+      buffer.writeUInt32LE(assertFitsUint32(point.quantity, 'daily.quantity'), offset); offset += 4;
+      buffer.writeUInt16LE(
+        assertFitsUint16(point.numAuctions, 'daily.numAuctions'), offset
+      ); offset += 2;
     }
 
-    // Section 2: Hourly Deltas
+    // Section 2: Hourly deltas
     for (const delta of data.hourlyDeltas) {
-      buffer.writeUInt32LE(delta.timestamp, offset); offset += 4;
-      buffer.writeUInt32LE(Math.min(0xffffffff, Math.max(0, Math.floor(delta.minPrice))), offset); offset += 4;
-      buffer.writeUInt32LE(Math.min(0xffffffff, Math.max(0, Math.floor(delta.medianPrice))), offset); offset += 4;
-      buffer.writeUInt32LE(Math.min(0xffffffff, Math.max(0, Math.floor(delta.quantity))), offset); offset += 4;
+      buffer.writeUInt32LE(assertFitsUint32(delta.timestamp, 'hourly.timestamp'), offset); offset += 4;
+      buffer.writeUInt32LE(assertFitsUint32(delta.minPrice, 'hourly.minPrice'), offset); offset += 4;
+      buffer.writeUInt32LE(assertFitsUint32(delta.medianPrice, 'hourly.medianPrice'), offset); offset += 4;
+      buffer.writeUInt32LE(assertFitsUint32(delta.quantity, 'hourly.quantity'), offset); offset += 4;
     }
 
-    // Section 3: Active Auction Lots
+    // Section 3: Active auction lots
     for (const lot of data.activeLots) {
-      buffer.writeUInt32LE(lot.auctionId, offset); offset += 4;
-      buffer.writeUInt32LE(lot.quantity, offset); offset += 4;
-      buffer.writeUInt32LE(Math.max(0, Math.floor(lot.unitPrice)), offset); offset += 4;
-      buffer.writeUInt32LE(Math.max(0, Math.floor(lot.buyout)), offset); offset += 4;
-      buffer.writeUInt32LE(Math.max(0, Math.floor(lot.bid)), offset); offset += 4;
+      if (lot.sellerRealmId > MAX_SELLER_REALM_ID) {
+        throw new Error(
+          `Cannot encode sellerRealmId: ${lot.sellerRealmId} exceeds the uint16 field range ` +
+            `(max ${MAX_SELLER_REALM_ID}). Widen lot.sellerRealmId to uint32 in a format bump.`
+        );
+      }
+      buffer.writeUInt32LE(assertFitsUint32(lot.auctionId, 'lot.auctionId'), offset); offset += 4;
+      buffer.writeUInt32LE(assertFitsUint32(lot.quantity, 'lot.quantity'), offset); offset += 4;
+      buffer.writeUInt32LE(assertFitsUint32(lot.unitPrice, 'lot.unitPrice'), offset); offset += 4;
+      buffer.writeUInt32LE(assertFitsUint32(lot.buyout, 'lot.buyout'), offset); offset += 4;
+      buffer.writeUInt32LE(assertFitsUint32(lot.bid, 'lot.bid'), offset); offset += 4;
       buffer.writeUInt8(lot.timeLeft, offset); offset += 1;
       buffer.writeUInt16LE(lot.sellerRealmId, offset); offset += 2;
       buffer.writeUInt8(0, offset); offset += 1; // Flags / reserved
     }
+
+    void ITEM_FORMAT;
+    void MAX_DELTA_SCALED;
 
     return buffer;
   }
