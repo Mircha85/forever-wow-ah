@@ -6,14 +6,22 @@ import { CONNECTED_REALMS } from '@/src/data/itemsCatalog';
 export function GET() {
   const blizzard = new BlizzardService();
   const r2 = new R2Service();
+  const configured = blizzard.hasCredentials();
 
   return NextResponse.json({
     status: 'online',
     timestamp: new Date().toISOString(),
+    // "synthetic_forever" means no credentials → demo mode; everything else
+    // means live Battle.net. The dashboard uses this to decide whether to
+    // surface a visible "demo data" banner instead of silently feeding the
+    // user plausible-sounding invented numbers.
+    dataSource: configured ? 'blizzard_api' : 'synthetic_forever',
     services: {
       blizzardOAuth: {
-        configured: blizzard.hasCredentials(),
-        description: blizzard.hasCredentials()
+        configured,
+        namespace: blizzard.getNamespace(),
+        region: blizzard.getRegion(),
+        description: configured
           ? 'Live Battle.net API Client Active'
           : 'WoW: Forever Classic Mode Active (Simulated Production Ingestion)',
       },

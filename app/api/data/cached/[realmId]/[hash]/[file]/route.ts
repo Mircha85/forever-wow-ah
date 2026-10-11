@@ -5,9 +5,9 @@ import { AuctionAggregator } from '@/src/services/aggregator';
 import {
   badRequest,
   enforceRateLimit,
-  internalError,
   parseItemId,
   parseRealmId,
+  upstreamError,
 } from '@/src/utils/apiGuard';
 
 /**
@@ -85,6 +85,6 @@ export async function GET(
       },
     });
   } catch (err: unknown) {
-    return internalError(err, 'data/cached/[file]');
+    return upstreamError(err, 'data/cached/[file]');
   }
 }

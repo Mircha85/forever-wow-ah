@@ -4,6 +4,7 @@ import {
   clientKeyFromHeaders,
   type RateLimitResult,
 } from './rateLimit';
+import { BlizzardApiError } from '../services/blizzard';
 
 /**
  * Shared guards for the App Router API surface.
@@ -87,6 +88,50 @@ export function badRequest(message: string): NextResponse {
     status: 400,
     headers: { 'Content-Type': 'application/json' },
   });
+}
+
+/**
+ * Surface a Battle.net failure to the caller with its real reason.
+ *
+ * `internalError` deliberately answers with an opaque 500, which is right
+ * for a bug in this codebase but wrong when the actual problem is an
+ * upstream one: a wrong namespace, refused credentials, an exhausted quota
+ * or a network fault all used to reach the client as an indistinguishable
+ * "Internal server error", or worse, as a successful response full of
+ * synthetic data.
+ *
+ * Only `BlizzardApiError` messages are forwarded; they name the namespace,
+ * status and realm id and carry no credentials. The raw upstream body is
+ * logged, not returned.
+ */
+export function upstreamError(err: unknown, context: string): NextResponse {
+  if (err instanceof BlizzardApiError) {
+    console.error(
+      `[API] ${context} upstream failure:`,
+      err.message,
+      err.detail ? `| upstream said: ${err.detail}` : ''
+    );
+
+    // 429 keeps its meaning so a client can back off; everything else is
+    // an upstream dependency failing, which is a bad gateway, not our bug.
+    const status = err.status === 429 ? 503 : 502;
+
+    return new NextResponse(
+      JSON.stringify({
+        error: err.message,
+        source: 'blizzard_api',
+        upstreamStatus: err.status ?? null,
+        realmId: err.realmId ?? null,
+        retryAfterMs: err.retryAfterMs ?? null,
+      }),
+      {
+        status,
+        headers: { 'Content-Type': 'application/json' },
+      }
+    );
+  }
+
+  return internalError(err, context);
 }
 
 /**

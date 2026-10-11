@@ -5,8 +5,8 @@ import { AuctionAggregator } from '@/src/services/aggregator';
 import {
   badRequest,
   enforceRateLimit,
-  internalError,
   parseRealmId,
+  upstreamError,
   DEFAULT_REALM_ID,
 } from '@/src/utils/apiGuard';
 
@@ -56,18 +56,27 @@ export async function POST(req: NextRequest) {
     const blizzard = new BlizzardService();
     const r2 = new R2Service();
 
-    const { snapshot, source } = await blizzard.fetchAuctionSnapshot(connectedRealmId);
+    // forceFetch: an explicit "Run pipeline" must actually reach Battle.net.
+    // If-Modified-Since is reserved for the polling path, and a 304 here
+    // would mean there is nothing to aggregate.
+    const { snapshot, source, lastModified } = await blizzard.fetchAuctionSnapshot(
+      connectedRealmId,
+      true
+    );
     const result = await AuctionAggregator.processSnapshot(connectedRealmId, snapshot, r2);
 
     return NextResponse.json({
       success: true,
+      // Surfaced so the UI can say plainly whether it is showing live or
+      // demo numbers. `synthetic_forever` only happens with no credentials.
       source,
+      lastModified,
       result: {
         ...result,
         source: r2.hasCloudflareR2() ? 'Cloudflare R2 Bucket' : 'Fast Local/Memory Cache',
       },
     });
   } catch (err: unknown) {
-    return internalError(err, 'pipeline/run');
+    return upstreamError(err, 'pipeline/run');
   }
 }

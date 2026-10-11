@@ -5,8 +5,8 @@ import { AuctionAggregator } from '@/src/services/aggregator';
 import {
   badRequest,
   enforceRateLimit,
-  internalError,
   parseRealmId,
+  upstreamError,
 } from '@/src/utils/apiGuard';
 
 /**
@@ -44,10 +44,12 @@ export async function GET(
 
     let buffer = await r2.getBin(stateKey);
 
-    // If not cached yet, bootstrap snapshot immediately
+    // If not cached yet, bootstrap snapshot immediately. A cache miss means
+    // we have nothing to serve, so this must be a real fetch; a 304 would
+    // leave the route with no data and no explanation.
     if (!buffer) {
       const blizzard = new BlizzardService();
-      const { snapshot } = await blizzard.fetchAuctionSnapshot(connectedRealmId);
+      const { snapshot } = await blizzard.fetchAuctionSnapshot(connectedRealmId, true);
       await AuctionAggregator.processSnapshot(connectedRealmId, snapshot, r2);
       buffer = await r2.getBin(stateKey);
     }
@@ -66,6 +68,6 @@ export async function GET(
       },
     });
   } catch (err: unknown) {
-    return internalError(err, 'data/cached state.bin');
+    return upstreamError(err, 'data/cached state.bin');
   }
 }
