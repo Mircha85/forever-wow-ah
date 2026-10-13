@@ -1,4 +1,4 @@
-import { type BlizzardAuctionSnapshot, type BlizzardAuctionItem, type WowItemMetadata, type ItemQuality } from '../types/auction';
+import { type BlizzardAuctionSnapshot, type WowItemMetadata, type ItemQuality } from '../types/auction';
 
 /**
  * Map Blizzard `quality.type` strings to the numeric quality code the

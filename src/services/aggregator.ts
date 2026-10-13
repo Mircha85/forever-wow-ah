@@ -374,7 +374,7 @@ export class AuctionAggregator {
     let minPrice = 1800; // 18s
     let medianPrice = 2200;
     let meanPrice = 2100;
-    let totalQty = 120;
+    const totalQty = 120;
 
     const activeLots: ActiveAuctionLot[] = [];
     const lotsCount = Math.min(25, Math.max(5, Math.floor(totalQty / 10)));
