@@ -73,8 +73,8 @@ const server = http.createServer(async (req, res) => {
       return;
     }
     res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.write(JSON.stringify({ started: true, region }));
-    // Send response and start work in background
+    res.end(JSON.stringify({ started: true, region }));
+    // Start extraction in background after responding
     setImmediate(async () => {
       try {
         const { code } = await runExtract(region);
