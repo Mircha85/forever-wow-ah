@@ -1,40 +1,19 @@
 {
-  "startedAt": "2026-10-13T07:42:48.199Z",
-  "finishedAt": null,
+  "startedAt": "2026-10-13T18:00:27.391Z",
+  "finishedAt": "2026-10-13T18:03:43.089Z",
   "region": "eu",
   "totals": {
-    "total": 92,
-    "ok": 4,
+    "total": 1,
+    "ok": 1,
     "failed": 0
   },
   "perRealm": {
-    "1080": {
+    "1305": {
       "region": "eu",
-      "id": 1080,
+      "id": 1305,
       "ok": true,
-      "durationSec": 3380.3,
-      "items": 5772
-    },
-    "1596": {
-      "region": "eu",
-      "id": 1596,
-      "ok": true,
-      "durationSec": 4308.5,
-      "items": 9657
-    },
-    "1597": {
-      "region": "eu",
-      "id": 1597,
-      "ok": true,
-      "durationSec": 5564.2,
-      "items": 13155
-    },
-    "1598": {
-      "region": "eu",
-      "id": 1598,
-      "ok": true,
-      "durationSec": 2334.6,
-      "items": 8042
+      "durationSec": 195.7,
+      "items": 15708
     }
   }
 }
