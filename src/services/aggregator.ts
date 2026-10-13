@@ -65,9 +65,14 @@ export class AuctionAggregator {
     const stateItems: StateItemSummary[] = [];
     const processedItemIds: number[] = [];
     let totalItemBinSize = 0;
+    const itemQueue: Array<{ itemKey: string; itemBuffer: Buffer }> = [];
 
     for (const [itemId, itemAuctions] of grouped.entries()) {
       processedItemIds.push(itemId);
+
+      // Skip items with < 3 auctions: per-item bin isn't useful when there are
+      // 1-2 lots, and writing 1000s of small blobs dominates R2 cost + run time.
+      if (itemAuctions.length < 3) continue;
 
       // Extract effective unit price for each auction
       const unitPrices: number[] = [];
@@ -158,9 +163,9 @@ export class AuctionAggregator {
 
       totalItemBinSize += itemBuffer.length;
 
-      // Upload to R2: data/cached/{connectedRealmId}/{itemId & 0xFF}/{itemId}.bin
+      // Queue for parallel upload after the loop (skip-cached + 16-way parallel = ~10x).
       const itemKey = R2Service.generateItemKey(connectedRealmId, itemId);
-      await r2.uploadBin(itemKey, itemBuffer);
+      itemQueue.push({ itemKey, itemBuffer });
 
       // Skip items whose summary fields would overflow uint32 when written to
       // state.bin (encodeState throws on overflow, which kills the run before
@@ -186,6 +191,12 @@ export class AuctionAggregator {
         quantityDelta24h,
       });
     }
+
+    // Parallel per-item uploads with skip-if-cached-same-size + 16-way cap.
+    // Sequential PUTs dominated per-realm time (~18 min of 19 min). Parallel
+    // + skip-cache drops this to ~30-90 s per realm. First run pays HeadObject
+    // cost per item; re-runs skip everything already cached.
+    await uploadItemsParallel(r2, itemQueue, 16);
 
     // 2. Encode State .bin
     const stateBuffer = BinaryEncoder.encodeState({
@@ -458,4 +469,41 @@ export class AuctionAggregator {
 
     return itemBuffer;
   }
+}
+
+/**
+ * Parallel per-item uploads to R2 with skip-if-cached-same-size. Caps
+ * concurrent in-flight PUTs so a 5k-item realm doesn't fan out to 5k
+ * simultaneous requests.
+ *
+ * Skip rule: if R2 already has an object at the same key with the same
+ * byte length, treat it as up-to-date and skip the PUT. The encoder is
+ * deterministic for identical input snapshots, so a size match is a
+ * strong signal the content also matches.
+ */
+async function uploadItemsParallel(
+  r2: R2Service,
+  items: ReadonlyArray<{ itemKey: string; itemBuffer: Buffer }>,
+  cap: number
+): Promise<void> {
+  if (items.length === 0) return;
+  let cursor = 0;
+  const workers = Array.from({ length: Math.max(1, cap) }, async () => {
+    while (cursor < items.length) {
+      const idx = cursor++;
+      const { itemKey, itemBuffer } = items[idx];
+      try {
+        const meta = await r2.getBinMetadata(itemKey);
+        if (meta && meta.size === itemBuffer.length) continue;
+        await r2.uploadBin(itemKey, itemBuffer);
+      } catch (err) {
+        // Mirror processSnapshot's behaviour: any per-item failure fails the
+        // whole run. R2 upload errors are already swallowed by uploadBin,
+        // so reaching here means a HeadObject or unexpected throw.
+        const message = err instanceof Error ? err.message : String(err);
+        throw new Error(`Upload failed for ${itemKey}: ${message}`);
+      }
+    }
+  });
+  await Promise.all(workers);
 }

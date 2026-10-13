@@ -5,6 +5,12 @@ import {
   HeadObjectCommand,
 } from '@aws-sdk/client-s3';
 
+export interface R2ObjectMetadata {
+  size: number;
+  lastModified: Date;
+  etag: string;
+}
+
 export interface R2Config {
   accountId?: string;
   accessKeyId?: string;
@@ -213,6 +219,37 @@ export class R2Service {
       return true;
     } catch {
       return false;
+    }
+  }
+
+  /**
+   * Cheap metadata fetch (HeadObject, no body download). Used to skip
+   * re-uploading items already in R2 with matching size — saves Class A
+   * operations on re-runs and doesn't waste bandwidth.
+   */
+  public async getBinMetadata(key: string): Promise<R2ObjectMetadata | null> {
+    if (R2Service.localMemoryCache.has(key)) {
+      const m = R2Service.localMemoryCache.get(key)!;
+      return { size: m.buffer.length, lastModified: m.lastModified, etag: m.eTag };
+    }
+
+    if (!this.hasCloudflareR2() || !this.client) {
+      return null;
+    }
+
+    try {
+      const command = new HeadObjectCommand({
+        Bucket: this.bucketName,
+        Key: key,
+      });
+      const r = await this.client.send(command);
+      return {
+        size: r.ContentLength || 0,
+        lastModified: r.LastModified || new Date(),
+        etag: r.ETag || '',
+      };
+    } catch {
+      return null;
     }
   }
 }
