@@ -171,7 +171,7 @@ export default function WowForeverAhDashboard() {
     let ignore = false;
     void (async () => {
       try {
-        const res = await fetch(`/api/realms?region=${region}`, { cache: 'no-store' });
+        const res = await fetch(`/api/realms?product=retail&region=${region}`, { cache: 'no-store' });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const json = (await res.json()) as { realms: Array<{ id: number; lastUpdated: string | null }> };
         if (!ignore) setAvailableRealms(json.realms ?? []);
