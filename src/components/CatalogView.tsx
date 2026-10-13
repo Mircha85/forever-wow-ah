@@ -29,7 +29,7 @@ interface CategoryCount {
 }
 
 interface CatalogViewProps {
-  totalItemCount: number;
+  _totalItemCount: number;
   categoryCounts: CategoryCount;
   processedItems: CatalogItem[];
   searchQuery: string;
@@ -58,7 +58,7 @@ interface CatalogViewProps {
 }
 
 export function CatalogView({
-  totalItemCount,
+  _totalItemCount,
   categoryCounts,
   processedItems,
   searchQuery,
@@ -185,7 +185,7 @@ export function CatalogView({
           {WOW_AUCTION_CATEGORIES.map((cat) => {
             const isActive = selectedCategory === cat.id;
             const hasSubs = cat.subcategories.length > 0;
-            const count = categoryCounts[cat.id];
+            const _count = categoryCounts[cat.id];
 
             return (
               <div key={cat.id} className="space-y-1">

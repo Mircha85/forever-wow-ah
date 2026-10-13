@@ -16,9 +16,6 @@ import { MAX_UINT32 } from '../utils/binaryFormat';
  *  encoder is not built to represent. Skipping keeps the rest of the snapshot
  *  processable instead of failing the entire run. */
 const PRICE_FIELDS = ['unit_price', 'buyout', 'bid'] as const;
-function priceFitsUint32(price: number): boolean {
-  return Number.isFinite(price) && price > 0 && price <= MAX_UINT32;
-}
 
 export interface AggregationResult {
   connectedRealmId: number;
@@ -371,9 +368,9 @@ export class AuctionAggregator {
     const generatedAt = Math.floor(Date.now() / 1000);
     
     // Default sensible prices (in copper)
-    let minPrice = 1800; // 18s
-    let medianPrice = 2200;
-    let meanPrice = 2100;
+    const minPrice = 1800; // 18s
+    const medianPrice = 2200;
+    const meanPrice = 2100;
     const totalQty = 120;
 
     const activeLots: ActiveAuctionLot[] = [];

@@ -53,6 +53,7 @@ describe('warmMetadataForIds', () => {
     setCachedMetadata(stubMeta(1));
     const fetched: number[] = [];
     const result = await warmMetadataForIds(
+      // eslint-disable-next-line @typescript-eslint/require-await
       async (id) => {
         fetched.push(id);
         return stubMeta(id);
@@ -69,6 +70,7 @@ describe('warmMetadataForIds', () => {
   it('deduplicates the input id list', async () => {
     const seen: number[] = [];
     const result = await warmMetadataForIds(
+      // eslint-disable-next-line @typescript-eslint/require-await
       async (id) => {
         seen.push(id);
         return stubMeta(id);
@@ -83,6 +85,7 @@ describe('warmMetadataForIds', () => {
   it('counts 404 / null as failed without retrying', async () => {
     let attempts = 0;
     const result = await warmMetadataForIds(
+      // eslint-disable-next-line @typescript-eslint/require-await
       async () => {
         attempts += 1;
         return null;
@@ -98,6 +101,7 @@ describe('warmMetadataForIds', () => {
   it('retries on thrown errors up to maxRetries then counts retriedOut', async () => {
     let attempts = 0;
     const result = await warmMetadataForIds(
+      // eslint-disable-next-line @typescript-eslint/require-await
       async () => {
         attempts += 1;
         throw new Error('boom');
@@ -113,6 +117,7 @@ describe('warmMetadataForIds', () => {
   it('eventual success after a transient throw counts as fetched', async () => {
     let attempts = 0;
     const result = await warmMetadataForIds(
+      // eslint-disable-next-line @typescript-eslint/require-await
       async (id) => {
         attempts += 1;
         if (attempts < 2) throw new Error('flaky');
@@ -127,7 +132,9 @@ describe('warmMetadataForIds', () => {
 
   it('returns zeroed counts for an empty id list without calling fetch', async () => {
     let calls = 0;
-    const result = await warmMetadataForIds(async () => {
+    const result = await warmMetadataForIds(
+      // eslint-disable-next-line @typescript-eslint/require-await
+      async () => {
       calls += 1;
       return stubMeta(0);
     }, []);
@@ -138,6 +145,7 @@ describe('warmMetadataForIds', () => {
   it('filters out non-positive and non-finite ids', async () => {
     const seen: number[] = [];
     await warmMetadataForIds(
+      // eslint-disable-next-line @typescript-eslint/require-await
       async (id) => {
         seen.push(id);
         return stubMeta(id);

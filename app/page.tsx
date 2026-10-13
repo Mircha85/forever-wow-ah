@@ -143,7 +143,7 @@ export default function WowForeverAhDashboard() {
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [selectedSubcategory, setSelectedSubcategory] = useState<string>('all');
   const [selectedChildSubcategory, setSelectedChildSubcategory] = useState<string>('all');
-  const [sortBy, setSortBy] = useState<'price_desc' | 'price_asc' | 'qty_desc' | 'delta_desc' | 'delta_asc'>('qty_desc');
+  const [sortBy] = useState<'price_desc' | 'price_asc' | 'qty_desc' | 'delta_desc' | 'delta_asc'>('qty_desc');
   // Gate: nothing in the catalog table renders until the user explicitly
   // presses the Search button. Picking a category only stages the query -
   // the press commits it. Reset on realm switch and on clearing filters
@@ -169,8 +169,7 @@ export default function WowForeverAhDashboard() {
 
   useEffect(() => {
     let ignore = false;
-    setIsLoadingRealms(true);
-    (async () => {
+    void (async () => {
       try {
         const res = await fetch(`/api/realms?region=${region}`, { cache: 'no-store' });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -715,7 +714,7 @@ const currentRealm: RealmView =
           />
         ) : (
           <CatalogView
-            totalItemCount={stateData?.items.length || 0}
+            _totalItemCount={stateData?.items.length || 0}
             categoryCounts={categoryCounts}
             processedItems={processedItems}
             searchQuery={searchQuery}
