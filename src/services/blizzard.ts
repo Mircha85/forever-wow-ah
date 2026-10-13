@@ -434,9 +434,15 @@ export class BlizzardService {
         const mediaJson = (await mediaRes.json()) as { assets?: Array<{ key: string; value: string }> };
         const iconAsset = mediaJson.assets?.find((a) => a.key === 'icon');
         if (iconAsset?.value) {
-          // Blizzard returns paths like "icons/INV_Misc_QuestionMark". Convert
-          // to the wow.zamimg.com CDN URL which is faster and cached everywhere.
-          icon = `https://wow.zamimg.com/images/wow/icons/large/${iconAsset.value.toLowerCase()}.jpg`;
+          // Blizzard's media asset value is either a relative path
+          // (`icons/INV_Misc_QuestionMark`) — converted to the wow.zamimg.com
+          // CDN — or already a full URL (`https://render.worldofwarcraft.com/...`).
+          // Detect the scheme; don't double-prefix.
+          if (iconAsset.value.startsWith('http')) {
+            icon = iconAsset.value;
+          } else {
+            icon = `https://wow.zamimg.com/images/wow/icons/large/${iconAsset.value.toLowerCase()}.jpg`;
+          }
         }
       }
     } catch {
