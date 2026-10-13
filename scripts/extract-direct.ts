@@ -23,11 +23,16 @@ import { R2Service } from '../src/services/r2';
 
 const ROOT = path.resolve(__dirname, '..');
 
-// Load .env.local
-const envText = fs.readFileSync(path.join(ROOT, '.env.local'), 'utf8');
-for (const line of envText.split(/\r?\n/)) {
-  const m = line.match(/^([A-Z_][A-Z0-9_]*)=(.*)$/);
-  if (m && !process.env[m[1]]) process.env[m[1]] = m[2];
+// Load .env.local (optional — in Cloud Run, env vars come from --set-env-vars + --set-secrets)
+try {
+  const envText = fs.readFileSync(path.join(ROOT, '.env.local'), 'utf8');
+  for (const line of envText.split(/\r?\n/)) {
+    const m = line.match(/^([A-Z_][A-Z0-9_]*)=(.*)$/);
+    if (m && !process.env[m[1]]) process.env[m[1]] = m[2];
+  }
+} catch (err) {
+  if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err;
+  // .env.local missing — fine in Cloud Run where env is set by the platform
 }
 
 const REGION_FILTER = process.argv[2]?.toLowerCase();
