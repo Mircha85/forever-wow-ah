@@ -16,9 +16,13 @@ const QUALITY_TYPE_TO_NUMBER: Record<string, ItemQuality> = {
   HEIRLOOM: 7,
 };
 
-/** Generic icon used when we have not fetched a media asset for the item. */
+/** Generic icon used when we have not fetched a media asset for the item.
+ *  Picked a neutral gold-coin icon rather than the literal "?" icon so
+ *  the dashboard doesn't render as a wall of question marks during cold
+ *  cache states.
+ */
 const PLACEHOLDER_ICON =
-  'https://wow.zamimg.com/images/wow/icons/large/inv_misc_questionmark.jpg';
+  'https://wow.zamimg.com/images/wow/icons/large/inv_misc_coin_01.jpg';
 
 export interface BlizzardConfig {
   clientId?: string;
@@ -402,7 +406,8 @@ export class BlizzardService {
     //   { id, name, level, required_level,
     //     quality: { type: "EPIC", name: "Epic" },
     //     item_class:    { id: 4, name: "Armor" },
-    //     item_subclass: { id: 1, name: "Cloth" } }
+    //     item_subclass: { id: 1, name: "Cloth" },
+    //     media: { id: 12345 }  ← resolve via /data/wow/media/item/{id} for icon URL }
     const data = (await response.json()) as Record<string, unknown>;
     const qualityObj = data.quality as { type?: string; name?: string } | undefined;
     const itemClassObj = data.item_class as { name?: string } | undefined;
@@ -413,10 +418,35 @@ export class BlizzardService {
       ? QUALITY_TYPE_TO_NUMBER[qualityRaw] ?? 1
       : 1;
 
+    // Resolve icon URL via the media endpoint. Best-effort — failure
+    // (rate-limit, network blip) keeps the placeholder rather than failing
+    // the whole metadata fetch.
+    let icon = PLACEHOLDER_ICON;
+    try {
+      const mediaRes = await fetch(
+        `https://${this.region}.api.blizzard.com/data/wow/media/item/${itemId}?namespace=${this.itemNamespace}&locale=${this.locale}`,
+        {
+          headers: { Authorization: `Bearer ${await this.getAccessToken()}` },
+          signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+        }
+      );
+      if (mediaRes.ok) {
+        const mediaJson = (await mediaRes.json()) as { assets?: Array<{ key: string; value: string }> };
+        const iconAsset = mediaJson.assets?.find((a) => a.key === 'icon');
+        if (iconAsset?.value) {
+          // Blizzard returns paths like "icons/INV_Misc_QuestionMark". Convert
+          // to the wow.zamimg.com CDN URL which is faster and cached everywhere.
+          icon = `https://wow.zamimg.com/images/wow/icons/large/${iconAsset.value.toLowerCase()}.jpg`;
+        }
+      }
+    } catch {
+      // Swallow — keep placeholder.
+    }
+
     return {
       id: typeof data.id === 'number' ? data.id : itemId,
       name: typeof data.name === 'string' ? data.name : `Item #${itemId}`,
-      icon: PLACEHOLDER_ICON,
+      icon,
       quality,
       itemClass: itemClassObj?.name ?? 'Miscellaneous',
       subclass: itemSubclassObj?.name ?? 'Junk',

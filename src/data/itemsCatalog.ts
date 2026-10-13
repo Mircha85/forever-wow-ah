@@ -15,7 +15,7 @@
 import { type WowItemMetadata } from '../types/auction';
 
 const PLACEHOLDER_ICON =
-  'https://wow.zamimg.com/images/wow/icons/large/inv_misc_questionmark.jpg';
+  'https://wow.zamimg.com/images/wow/icons/large/inv_misc_coin_01.jpg';
 
 /**
  * Empty stub kept for source compatibility. New code should call
