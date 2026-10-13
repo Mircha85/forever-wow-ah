@@ -160,6 +160,33 @@ export default function WowForeverAhDashboard() {
   const [showPipelineModal, setShowPipelineModal] = useState<boolean>(false);
   const [showArchDocs, setShowArchDocs] = useState<boolean>(false);
 
+  // Realm enumeration: pulled from R2 via /api/realms. Default region EU.
+  const [region] = useState<'eu' | 'us'>('eu');
+  const [availableRealms, setAvailableRealms] = useState<
+    Array<{ id: number; lastUpdated: string | null }>
+  >([]);
+  const [isLoadingRealms, setIsLoadingRealms] = useState<boolean>(true);
+
+  useEffect(() => {
+    let ignore = false;
+    setIsLoadingRealms(true);
+    (async () => {
+      try {
+        const res = await fetch(`/api/realms?region=${region}`, { cache: 'no-store' });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const json = (await res.json()) as { realms: Array<{ id: number; lastUpdated: string | null }> };
+        if (!ignore) setAvailableRealms(json.realms ?? []);
+      } catch (err) {
+        console.error('[realms fetch]', err);
+      } finally {
+        if (!ignore) setIsLoadingRealms(false);
+      }
+    })();
+    return () => {
+      ignore = true;
+    };
+  }, [region, refreshTick]);
+
   // Load state.bin from static cache/API. Refresh by changing realm
   // or by bumping refreshTick (used after pipeline ingestion).
   useEffect(() => {
@@ -167,7 +194,7 @@ export default function WowForeverAhDashboard() {
 
     const execute = async () => {
       try {
-        const res = await fetch(`/api/data/cached/${selectedRealmId}/state.bin`, {
+        const res = await fetch(`/api/data/cached/${region}/${selectedRealmId}/state.bin`, {
           cache: 'no-store',
         });
 
@@ -204,9 +231,9 @@ export default function WowForeverAhDashboard() {
     const updatedStates: Record<number, DecodedStateBin> = {};
     try {
       await Promise.all(
-        CONNECTED_REALMS.map(async (realm) => {
+        availableRealms.map(async (realm) => {
           try {
-            const res = await fetch(`/api/data/cached/${realm.id}/state.bin`, {
+            const res = await fetch(`/api/data/cached/${region}/${realm.id}/state.bin`, {
               cache: 'no-store',
             });
             if (res.ok) {
@@ -225,7 +252,7 @@ export default function WowForeverAhDashboard() {
     } finally {
       setIsLoadingAllRealms(false);
     }
-  }, []);
+  }, [availableRealms, region]);
 
   useEffect(() => {
     let ignore = false;
@@ -464,8 +491,11 @@ export default function WowForeverAhDashboard() {
     setHasSearched(false);
   }, []);
 
-  const currentRealm =
-    CONNECTED_REALMS.find((r) => r.id === selectedRealmId) || CONNECTED_REALMS[0];
+  interface RealmView { id: number; lastUpdated: string | null; name: string }
+const currentRealm: RealmView =
+  (availableRealms.find((r) => r.id === selectedRealmId) as RealmView | undefined) ??
+  (availableRealms[0] as RealmView | undefined) ??
+  { id: selectedRealmId, lastUpdated: null, name: `#${selectedRealmId}` };
 
   const flippingOpportunities = useMemo<FlippingOpportunity[]>(() => {
     const list: FlippingOpportunity[] = [];
@@ -585,6 +615,10 @@ export default function WowForeverAhDashboard() {
         showArchDocs={showArchDocs}
         setShowArchDocs={setShowArchDocs}
         setShowPipelineModal={setShowPipelineModal}
+        realms={availableRealms}
+        selectedRealmId={selectedRealmId}
+        onSelectRealm={setSelectedRealmId}
+        isLoadingRealms={isLoadingRealms}
       />
         {/* Main Container */}
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 py-6 space-y-6">

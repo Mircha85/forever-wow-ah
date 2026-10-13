@@ -3,6 +3,7 @@ import {
   PutObjectCommand,
   GetObjectCommand,
   HeadObjectCommand,
+  ListObjectsV2Command,
 } from '@aws-sdk/client-s3';
 
 export interface R2ObjectMetadata {
@@ -251,5 +252,52 @@ export class R2Service {
     } catch {
       return null;
     }
+  }
+
+  /**
+   * Paginated list of R2 keys under `prefix`. With `delimiter` set (e.g. "/")
+   * R2 also returns CommonPrefixes — directory-style listings without
+   * enumerating every key, which is what realm/item enumeration needs.
+   */
+  public async listKeys(
+    prefix: string,
+    delimiter?: string
+  ): Promise<{ keys: string[]; prefixes: string[] }> {
+    const keys: string[] = [];
+    const prefixes: string[] = [];
+
+    if (!this.hasCloudflareR2() || !this.client) {
+      // Empty memory cache means nothing to enumerate; R2 not configured.
+      // Caller is expected to handle the empty result gracefully.
+      for (const k of R2Service.localMemoryCache.keys()) {
+        if (k.startsWith(prefix)) keys.push(k);
+      }
+      return { keys, prefixes };
+    }
+
+    let token: string | undefined;
+    do {
+      const cmd = new ListObjectsV2Command({
+        Bucket: this.bucketName,
+        Prefix: prefix,
+        Delimiter: delimiter,
+        ContinuationToken: token,
+        MaxKeys: 1000,
+      });
+      const r = await this.client.send(cmd);
+      if (r.Contents) {
+        for (const obj of r.Contents) {
+          if (obj.Key) keys.push(obj.Key);
+        }
+      }
+      if (r.CommonPrefixes) {
+        for (const p of r.CommonPrefixes) {
+          if (p.Prefix) prefixes.push(p.Prefix);
+        }
+      }
+      token = r.NextContinuationToken;
+    } while (token);
+
+    return { keys, prefixes };
   }
 }

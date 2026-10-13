@@ -1,7 +1,12 @@
 'use client';
 
-import { Star, Info, Cpu, Database, Binary, HardDrive } from 'lucide-react';
+import { Star, Info, Cpu, Database, Binary, HardDrive, ChevronDown } from 'lucide-react';
 import type { ViewMode } from '@/src/types/dashboard';
+
+export interface RealmOption {
+  id: number;
+  lastUpdated: string | null;
+}
 
 interface DashboardHeaderProps {
   viewMode: ViewMode;
@@ -10,6 +15,10 @@ interface DashboardHeaderProps {
   showArchDocs: boolean;
   setShowArchDocs: (next: boolean | ((prev: boolean) => boolean)) => void;
   setShowPipelineModal: (show: boolean) => void;
+  realms: RealmOption[];
+  selectedRealmId: number | null;
+  onSelectRealm: (id: number) => void;
+  isLoadingRealms: boolean;
 }
 
 export function DashboardHeader({
@@ -19,6 +28,10 @@ export function DashboardHeader({
   showArchDocs,
   setShowArchDocs,
   setShowPipelineModal,
+  realms,
+  selectedRealmId,
+  onSelectRealm,
+  isLoadingRealms,
 }: DashboardHeaderProps) {
   return (
     <>
@@ -54,6 +67,35 @@ export function DashboardHeader({
                 <span className="text-emerald-400 font-mono">ArrayBuffer</span>
               </div>
             </div>
+          </div>
+
+          {/* Realm Selector */}
+          <div className="relative flex-shrink-0">
+            <label className="sr-only" htmlFor="realm-selector">Realm</label>
+            <select
+              id="realm-selector"
+              value={selectedRealmId ?? ''}
+              onChange={(e) => {
+                const v = Number(e.target.value);
+                if (Number.isFinite(v)) onSelectRealm(v);
+              }}
+              disabled={isLoadingRealms || realms.length === 0}
+              className="appearance-none cursor-pointer pl-2 sm:pl-3 pr-7 py-1.5 sm:py-2 text-[11px] sm:text-xs font-mono font-semibold rounded-lg bg-slate-950 border border-slate-700 hover:border-amber-500/50 text-slate-200 disabled:text-slate-500 disabled:cursor-not-allowed transition-colors"
+            >
+              {isLoadingRealms && <option value="">Loading realms...</option>}
+              {!isLoadingRealms && realms.length === 0 && <option value="">No realms cached</option>}
+              {!isLoadingRealms && realms.length > 0 && (
+                <>
+                  <option value="" disabled>Select realm ({realms.length})</option>
+                  {realms.map((r) => (
+                    <option key={r.id} value={r.id}>
+                      #{r.id}{r.lastUpdated ? '' : ' (no state.bin yet)'}
+                    </option>
+                  ))}
+                </>
+              )}
+            </select>
+            <ChevronDown className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
           </div>
 
           {/* Controls: View Tabs, Arch, Ingest */}
@@ -167,7 +209,7 @@ export function DashboardHeader({
                 <span>3. Cloudflare R2 Routing</span>
               </div>
               <p className="text-slate-400 leading-relaxed font-mono text-[10px] break-all">
-                data/cached/&#123;realmId&#125;/&#123;itemId&amp;0xFF&#125;/&#123;itemId&#125;.bin
+                data/cached/&#123;region&#125;/&#123;realmId&#125;/&#123;itemId&amp;0xFF&#125;/&#123;itemId&#125;.bin
               </p>
             </div>
 
