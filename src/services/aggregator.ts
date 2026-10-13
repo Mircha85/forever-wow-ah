@@ -38,6 +38,8 @@ export class AuctionAggregator {
    * encodes to .bin, and uploads via R2Service.
    */
   public static async processSnapshot(
+    product: 'retail' | 'forever',
+    region: 'eu' | 'us',
     connectedRealmId: number,
     snapshot: BlizzardAuctionSnapshot,
     r2: R2Service
@@ -161,7 +163,7 @@ export class AuctionAggregator {
       totalItemBinSize += itemBuffer.length;
 
       // Queue for parallel upload after the loop (skip-cached + 16-way parallel = ~10x).
-      const itemKey = R2Service.generateItemKey(connectedRealmId, itemId);
+      const itemKey = R2Service.generateItemKey(product, region, connectedRealmId, itemId);
       itemQueue.push({ itemKey, itemBuffer });
 
       // Skip items whose summary fields would overflow uint32 when written to
@@ -204,7 +206,7 @@ export class AuctionAggregator {
     });
 
     // Upload to R2: data/cached/{connectedRealmId}/state.bin
-    const stateKey = R2Service.generateStateKey(connectedRealmId);
+    const stateKey = R2Service.generateStateKey(product, region, connectedRealmId);
     await r2.uploadBin(stateKey, stateBuffer);
 
     const endTime = performance.now();
@@ -361,6 +363,8 @@ export class AuctionAggregator {
    * Generates and caches a single item.bin on-demand if missing from cache.
    */
   public static async generateSingleItemBin(
+    product: 'retail' | 'forever',
+    region: 'eu' | 'us',
     connectedRealmId: number,
     itemId: number,
     r2: R2Service
@@ -411,7 +415,7 @@ export class AuctionAggregator {
       activeLots,
     });
 
-    const itemKey = R2Service.generateItemKey(connectedRealmId, itemId);
+    const itemKey = R2Service.generateItemKey(product, region, connectedRealmId, itemId);
     await r2.uploadBin(itemKey, itemBuffer);
 
     return itemBuffer;

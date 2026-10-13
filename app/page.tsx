@@ -193,7 +193,7 @@ export default function WowForeverAhDashboard() {
 
     const execute = async () => {
       try {
-        const res = await fetch(`/api/data/cached/${region}/${selectedRealmId}/state.bin`, {
+        const res = await fetch(`/api/data/cached/retail/${region}/${selectedRealmId}/state.bin`, {
           cache: 'no-store',
         });
 
@@ -232,7 +232,7 @@ export default function WowForeverAhDashboard() {
       await Promise.all(
         availableRealms.map(async (realm) => {
           try {
-            const res = await fetch(`/api/data/cached/${region}/${realm.id}/state.bin`, {
+            const res = await fetch(`/api/data/cached/retail/${region}/${realm.id}/state.bin`, {
               cache: 'no-store',
             });
             if (res.ok) {

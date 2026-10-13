@@ -83,19 +83,28 @@ export class R2Service {
 
   /**
    * Generates standard WoW Forever AH storage path for an item:
-   * data/cached/{connectedRealmId}/{itemId & 0xFF}/{itemId}.bin
+   *   data/cached/{product}/{region}/{connectedRealmId}/{itemId & 0xFF}/{itemId}.bin
    */
-  public static generateItemKey(connectedRealmId: number, itemId: number): string {
+  public static generateItemKey(
+    product: 'retail' | 'forever',
+    region: 'eu' | 'us',
+    connectedRealmId: number,
+    itemId: number
+  ): string {
     const shard = itemId & 0xff;
-    return `data/cached/${connectedRealmId}/${shard}/${itemId}.bin`;
+    return `data/cached/${product}/${region}/${connectedRealmId}/${shard}/${itemId}.bin`;
   }
 
   /**
    * Generates standard WoW Forever AH storage path for realm state:
-   * data/cached/{connectedRealmId}/state.bin
+   *   data/cached/{product}/{region}/{connectedRealmId}/state.bin
    */
-  public static generateStateKey(connectedRealmId: number): string {
-    return `data/cached/${connectedRealmId}/state.bin`;
+  public static generateStateKey(
+    product: 'retail' | 'forever',
+    region: 'eu' | 'us',
+    connectedRealmId: number
+  ): string {
+    return `data/cached/${product}/${region}/${connectedRealmId}/state.bin`;
   }
 
   /**

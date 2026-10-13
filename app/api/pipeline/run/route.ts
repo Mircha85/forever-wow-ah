@@ -79,7 +79,16 @@ export async function POST(req: NextRequest) {
       connectedRealmId,
       true
     );
-    const result = await AuctionAggregator.processSnapshot(connectedRealmId, snapshot, r2);
+    const product: 'retail' | 'forever' =
+      process.env.BLIZZARD_PRODUCT === 'forever' ? 'forever' : 'retail';
+    const region = blizzard.getRegion() as 'eu' | 'us';
+    const result = await AuctionAggregator.processSnapshot(
+      product,
+      region,
+      connectedRealmId,
+      snapshot,
+      r2
+    );
 
     return NextResponse.json({
       success: true,

@@ -69,6 +69,9 @@ if (limitSingleId !== undefined) {
 
 const CONCURRENCY = 2;
 const RETRIES = 3;
+// BLIZZARD_PRODUCT env (retail|forever). Default retail until Nov 4 2026.
+const PRODUCT: 'retail' | 'forever' =
+  process.env.BLIZZARD_PRODUCT === 'forever' ? 'forever' : 'retail';
 
 const SUMMARY_PATH = path.join(ROOT, 'extraction-direct-summary.json');
 
@@ -84,6 +87,7 @@ interface RealmResult {
 async function processRealm(
   blizzard: BlizzardService,
   r2: R2Service,
+  region: 'eu' | 'us',
   realmId: number
 ): Promise<RealmResult> {
   const start = Date.now();
@@ -91,7 +95,13 @@ async function processRealm(
   for (let attempt = 1; attempt <= RETRIES; attempt++) {
     try {
       const { snapshot } = await blizzard.fetchAuctionSnapshot(realmId, true);
-      const result = await AuctionAggregator.processSnapshot(realmId, snapshot, r2);
+      const result = await AuctionAggregator.processSnapshot(
+        PRODUCT,
+        region,
+        realmId,
+        snapshot,
+        r2
+      );
       return {
         region: blizzard.getRegion(),
         id: realmId,
@@ -183,7 +193,7 @@ async function main() {
   await parallelMap(
     ALL,
     CONCURRENCY,
-    async ({ region, id }) => processRealm(getBlizzard(region), r2, id),
+    async ({ region, id }) => processRealm(getBlizzard(region), r2, region, id),
     (result, idx) => {
       summary.perRealm[result.id] = result;
       if (result.ok) summary.totals.ok++;

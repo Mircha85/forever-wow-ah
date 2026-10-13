@@ -10,65 +10,85 @@ import {
   upstreamError,
 } from '@/src/utils/apiGuard';
 
-/**
- * Per-item binary blob.
- *
- * On a cache miss this route fetches a full Battle.net snapshot and can
- * generate a single item record on demand. Both are outbound, billable work
- * reachable with an arbitrary itemId, so it is rate limited here too — the
- * per-item cache miss is a cheap way for one client to force repeated
- * aggregation.
- *
- * The limit is deliberately looser than pipeline/run: this is the dashboard's
- * normal read path and real users page through many items.
- */
+const PRODUCTS = ['retail', 'forever'] as const;
+type Product = typeof PRODUCTS[number];
 
 /** 60 requests per minute per client. */
 const LIMIT = 60;
 const WINDOW_MS = 60_000;
 
+/**
+ * Per-item binary blob with product + region partition.
+ *
+ *   /api/data/cached/{product}/{region}/{realmId}/{shard}/{itemId}.bin
+ *
+ * `{shard}` is `itemId & 0xff` — preserved in the URL for layout reasons but
+ * the route extracts `itemId` from the filename, not the shard.
+ */
 export async function GET(
   req: NextRequest,
-  { params }: { params: Promise<{ realmId: string; hash: string; file: string }> }
+  { params }: { params: Promise<{ product: string; region: string; realmId: string; hash: string; file: string }> }
 ) {
-  const limited = enforceRateLimit(req, 'item-bin', LIMIT, WINDOW_MS);
+  const limited = enforceRateLimit(req, 'item-bin-v3', LIMIT, WINDOW_MS);
   if (limited) return limited;
 
   try {
-    const { realmId, file } = await params;
+    const { product, region, realmId, file } = await params;
 
+    if (!(PRODUCTS as readonly string[]).includes(product)) {
+      return badRequest(`product must be one of: ${PRODUCTS.join(', ')}`);
+    }
+    if (region !== 'eu' && region !== 'us') {
+      return badRequest('region must be "eu" or "us"');
+    }
     const parsedRealmId = parseRealmId(realmId);
     if (parsedRealmId === null) {
       return badRequest('realmId must be a positive integer');
     }
 
-    // The [file] segment carries "<itemId>.bin"; strip the extension explicitly
-    // instead of relying on parseInt, which would happily accept "12abc".
     const itemId = parseItemId(file.replace(/\.bin$/i, ''));
     if (itemId === null) {
       return badRequest('file must be <itemId>.bin with a positive integer id');
     }
 
     const r2 = new R2Service();
-    const itemKey = R2Service.generateItemKey(parsedRealmId, itemId);
+    const itemKey = R2Service.generateItemKey(
+      product as Product,
+      region,
+      parsedRealmId,
+      itemId
+    );
 
     let buffer = await r2.getBin(itemKey);
 
-    // If item not cached yet, bootstrap realm snapshot
     if (!buffer) {
       try {
-        const blizzard = new BlizzardService();
+        const blizzard = new BlizzardService({
+          region,
+          namespace: product === 'forever' ? `dynamic-classicann-${region}` : `dynamic-${region}`,
+        });
         const { snapshot } = await blizzard.fetchAuctionSnapshot(parsedRealmId);
-        await AuctionAggregator.processSnapshot(parsedRealmId, snapshot, r2);
+        await AuctionAggregator.processSnapshot(
+          product as Product,
+          region,
+          parsedRealmId,
+          snapshot,
+          r2
+        );
         buffer = await r2.getBin(itemKey);
       } catch (e) {
         console.warn(`[API] Snapshot processing fallback for item #${itemId}:`, e);
       }
     }
 
-    // If still not present in buffer, generate single item record directly on-demand
     if (!buffer) {
-      buffer = await AuctionAggregator.generateSingleItemBin(parsedRealmId, itemId, r2);
+      buffer = await AuctionAggregator.generateSingleItemBin(
+      product as Product,
+      region,
+      parsedRealmId,
+      itemId,
+      r2
+    );
     }
 
     if (!buffer) {
@@ -82,9 +102,11 @@ export async function GET(
         'Content-Disposition': `inline; filename="${itemId}.bin"`,
         'Cache-Control': 'public, max-age=900, stale-while-revalidate=1800',
         'X-WoW-AH-Codec': 'UNDR-v1',
+        'X-WoW-AH-Product': product,
+        'X-WoW-AH-Region': region,
       },
     });
   } catch (err: unknown) {
-    return upstreamError(err, 'data/cached/[file]');
+    return upstreamError(err, 'data/cached/[file] v3');
   }
 }
