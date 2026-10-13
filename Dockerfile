@@ -9,10 +9,13 @@ RUN npm ci --omit=dev && npm install --no-save tsx@4 esbuild@0.24
 # Copy only what's needed to extract
 COPY tsconfig.json ./
 COPY realm-ids.json ./
-COPY scripts/extract-direct.ts scripts/
+COPY scripts/ scripts/
 COPY src/ src/
 
 ENV NODE_ENV=production
 ENV BLIZZARD_LOCALE=en_US
+ENV PORT=8080
 
-CMD ["node", "--experimental-strip-types", "scripts/extract-direct.ts", "eu"]
+EXPOSE 8080
+
+CMD ["node", "scripts/run-server.mjs"]

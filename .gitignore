@@ -19,4 +19,5 @@ yarn.lock
 pnpm-lock.yaml
 npm-debug.log*
 docs/de-rezolvat.md
+docs/secret-rotation.md
 src/utils/__tests__/apiGuard.test.ts
