@@ -47,7 +47,7 @@ function runExtract(region) {
 
 const server = http.createServer(async (req, res) => {
   // Health check
-  if (req.method === 'GET' && req.url === '/healthz') {
+  if (req.method === 'GET' && (req.url === '/healthz' || req.url === '/' || req.url === '')) {
     res.writeHead(200, { 'Content-Type': 'text/plain' });
     res.end('ok');
     return;
