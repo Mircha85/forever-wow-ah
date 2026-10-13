@@ -9,6 +9,16 @@ import {
 } from '../types/auction';
 import { BinaryEncoder } from './encoder';
 import { R2Service } from './r2';
+import { MAX_UINT32 } from '../utils/binaryFormat';
+
+/** Drop auctions whose copper price exceeds the binary format's uint32 ceiling.
+ *  Retail AH routinely lists items past 42 949 gold (4.29 B copper), which the
+ *  encoder is not built to represent. Skipping keeps the rest of the snapshot
+ *  processable instead of failing the entire run. */
+const PRICE_FIELDS = ['unit_price', 'buyout', 'bid'] as const;
+function priceFitsUint32(price: number): boolean {
+  return Number.isFinite(price) && price > 0 && price <= MAX_UINT32;
+}
 
 export interface AggregationResult {
   connectedRealmId: number;
@@ -68,6 +78,11 @@ export class AuctionAggregator {
       const activeLots: ActiveAuctionLot[] = [];
 
       for (const auc of itemAuctions) {
+        // Retail AH lists some items past 42 949 gold. The encoder rejects those
+        // values; skipping the auction keeps the item on the dashboard with
+        // whatever low-price lots remain.
+        if (PRICE_FIELDS.some((f) => (auc[f] ?? 0) > MAX_UINT32)) continue;
+
         const qty = Math.max(1, auc.quantity || 1);
         totalQty += qty;
 
@@ -147,6 +162,18 @@ export class AuctionAggregator {
       const itemKey = R2Service.generateItemKey(connectedRealmId, itemId);
       await r2.uploadBin(itemKey, itemBuffer);
 
+      // Skip items whose summary fields would overflow uint32 when written to
+      // state.bin (encodeState throws on overflow, which kills the run before
+      // state.bin is written — leaving per-item files behind with no summary
+      // to find them by). Per-item .bin is already uploaded above.
+      const overflow =
+        medianPrice > MAX_UINT32 ||
+        meanPrice > MAX_UINT32 ||
+        totalQty > MAX_UINT32;
+      if (overflow) {
+        continue;
+      }
+
       // Add to State list
       stateItems.push({
         itemId,
@@ -175,8 +202,11 @@ export class AuctionAggregator {
     const endTime = performance.now();
     const processingTimeMs = Math.round(endTime - startTime);
 
-    // Calculate approximate raw JSON size for comparison
-    const rawJsonEquivalentSize = Buffer.byteLength(JSON.stringify(snapshot));
+    // Approximate the raw JSON footprint instead of re-serialising the full
+    // snapshot. A live Retail snapshot is 10-25 MB; re-stringifying it just to
+    // show a cosmetic compression ratio pushes the route over the V8 heap on
+    // dev runs and yields nothing the dashboard cannot infer from item count.
+    const rawJsonEquivalentSize = auctions.length * 220;
     const totalBinSize = stateBuffer.length + totalItemBinSize;
     const compressionRatioPercent =
       rawJsonEquivalentSize > 0
@@ -239,10 +269,10 @@ export class AuctionAggregator {
 
       if (day > 1) {
         const drift = (random() - 0.48) * 0.15; // +/- 7.5% drift per day
-        dMedian = Math.max(100, Math.round(dMedian * (1 + drift)));
+        dMedian = Math.max(100, Math.min(MAX_UINT32, Math.round(dMedian * (1 + drift))));
         dayMedian = dMedian;
-        dayMin = Math.round(dayMedian * (0.85 + random() * 0.1));
-        dayMean = Math.round(dayMedian * (0.95 + random() * 0.1));
+        dayMin = Math.min(MAX_UINT32, Math.round(dayMedian * (0.85 + random() * 0.1)));
+        dayMean = Math.min(MAX_UINT32, Math.round(dayMedian * (0.95 + random() * 0.1)));
       }
 
       const dayQty = Math.max(10, Math.round(currentQty * (0.7 + random() * 0.6)));
@@ -281,9 +311,9 @@ export class AuctionAggregator {
 
       if (hour > 1) {
         const drift = (random() - 0.49) * 0.05; // gentle random walk
-        hMedian = Math.max(100, Math.round(hMedian * (1 + drift)));
+        hMedian = Math.max(100, Math.min(MAX_UINT32, Math.round(hMedian * (1 + drift))));
         hMed = isDeadHour ? 0 : hMedian;
-        hMin = isDeadHour ? 0 : Math.max(10, Math.round(hMedian * (0.88 + random() * 0.08)));
+        hMin = isDeadHour ? 0 : Math.max(10, Math.min(MAX_UINT32, Math.round(hMedian * (0.88 + random() * 0.08))));
       }
 
       const hQty = isDeadHour

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { type DecodedItemBin, TIME_LEFT_LABELS } from '../types/auction';
 import { getItemMetadata, getQualityColor, getQualityBorderColor, CONNECTED_REALMS } from '../data/itemsCatalog';
 import { WoWMoney } from './WoWMoney';
@@ -33,7 +33,7 @@ interface ItemDetailModalProps {
   onSelectRealm?: (realmId: number) => void;
 }
 
-export const ItemDetailModal: React.FC<ItemDetailModalProps> = ({
+export function ItemDetailModal({
   itemData,
   realmName,
   onClose,
@@ -41,7 +41,7 @@ export const ItemDetailModal: React.FC<ItemDetailModalProps> = ({
   isFavorited = false,
   onToggleFavorite,
   onSelectRealm,
-}) => {
+}: ItemDetailModalProps) {
   const meta = getItemMetadata(itemData.itemId);
   // Default to heatmaps so the 2 hourly heat maps are immediately displayed upon clicking an item!
   const [activeTab, setActiveTab] = useState<'heatmaps' | 'chart' | 'lots' | 'all'>('heatmaps');

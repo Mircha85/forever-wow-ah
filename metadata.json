@@ -2,5 +2,5 @@
   "name": "WoW Forever AH",
   "description": "High-performance auction house intelligence dashboard and binary data processing pipeline for WoW: Forever with client-side ArrayBuffer/DataView decoding.",
   "requestFramePermissions": [],
-  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+  "majorCapabilities": []
 }

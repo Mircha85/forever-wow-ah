@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useMemo } from 'react';
+import { useState, useMemo } from 'react';
 import { WoWMoney } from './WoWMoney';
 
 // TODO: Replace with live WoW: Forever realm list and real-time ingestion when moving to production
@@ -67,14 +67,14 @@ function formatTimeAgo(hours?: number): string | undefined {
   return `${days} days ago`;
 }
 
-export const MultiRealmPriceTable: React.FC<MultiRealmPriceTableProps> = ({
+export function MultiRealmPriceTable({
   itemId,
   currentRealmId = 4401,
   currentPriceCopper = 100000, // default 10g
   currentQuantity = 10,
   onSelectRealm,
   className = '',
-}) => {
+}: MultiRealmPriceTableProps) {
   const [sortField, setSortField] = useState<'name' | 'population' | 'price' | 'quantity'>('name');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
 

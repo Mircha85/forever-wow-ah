@@ -18,3 +18,5 @@ bun.lockb
 yarn.lock
 pnpm-lock.yaml
 npm-debug.log*
+docs/de-rezolvat.md
+src/utils/__tests__/apiGuard.test.ts

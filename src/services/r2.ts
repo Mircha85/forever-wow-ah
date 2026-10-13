@@ -31,6 +31,20 @@ export class R2Service {
     return R2Service.localMemoryCache.delete(key);
   }
 
+  /**
+   * Read the metadata (lastModified, eTag) for an in-memory cache entry
+   * without disturbing it. Returned so callers can decide whether the
+   * cached blob is stale relative to credentials-first-seen or another
+   * external signal without re-uploading or evicting the entry.
+   */
+  public static getCacheMeta(
+    key: string
+  ): { lastModified: Date; eTag: string } | null {
+    const entry = R2Service.localMemoryCache.get(key);
+    if (!entry) return null;
+    return { lastModified: entry.lastModified, eTag: entry.eTag };
+  }
+
   constructor(config?: R2Config) {
     const accountId = config?.accountId || process.env.R2_ACCOUNT_ID;
     const accessKeyId = config?.accessKeyId || process.env.R2_ACCESS_KEY_ID;

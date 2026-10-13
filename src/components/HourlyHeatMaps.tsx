@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useMemo } from 'react';
+import { useState, useMemo } from 'react';
 import { type HourlyDelta } from '../types/auction';
 import { WoWMoney } from './WoWMoney';
 import { ChevronDown, ChevronUp, Clock, Calendar } from 'lucide-react';
@@ -22,12 +22,12 @@ interface CellData {
   hasData: boolean;
 }
 
-export const HourlyHeatMaps: React.FC<HourlyHeatMapsProps> = ({
+export function HourlyHeatMaps({
   hourlyDeltas,
   itemName,
   realmName,
   defaultOpen = true,
-}) => {
+}: HourlyHeatMapsProps) {
   const [isOpen, setIsOpen] = useState(defaultOpen);
   const [hoveredCell, setHoveredCell] = useState<CellData | null>(null);
 

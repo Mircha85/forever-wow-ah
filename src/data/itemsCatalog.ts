@@ -942,8 +942,6 @@ export const CONNECTED_REALMS: Array<{
   slug: string;
   population: string;
 }> = [
-  { id: 4401, name: 'WoW: Forever Classic (Main)', region: 'eu', slug: 'wow-forever-classic', population: 'Full' },
-  { id: 4402, name: 'WoW: Forever Hardcore', region: 'eu', slug: 'wow-forever-hc', population: 'High' },
   { id: 1305, name: 'Silvermoon / Tarren Mill (Connected)', region: 'eu', slug: 'silvermoon', population: 'High' },
   { id: 1403, name: 'Draenor / Kazzak (Connected)', region: 'eu', slug: 'draenor', population: 'High' },
   { id: 3678, name: 'Illidan / Area 52 (Connected)', region: 'us', slug: 'illidan', population: 'Full' },

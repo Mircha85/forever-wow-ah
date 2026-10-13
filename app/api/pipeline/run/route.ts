@@ -6,6 +6,7 @@ import {
   badRequest,
   enforceRateLimit,
   parseRealmId,
+  requireBearer,
   upstreamError,
   DEFAULT_REALM_ID,
 } from '@/src/utils/apiGuard';
@@ -14,13 +15,25 @@ import {
  * Full ingestion pipeline: fetch a Battle.net snapshot, aggregate it, encode to
  * .bin and persist to R2.
  *
- * This is the most expensive endpoint in the app — one call can pull hundreds of
- * thousands of auctions and write to storage — and it was open, unauthenticated
- * and unthrottled. It is now rate limited per client IP.
+ * This is the most expensive endpoint in the app — one call can pull hundreds
+ * of thousands of auctions and write to storage. It is therefore:
  *
- * A per-IP limit is a floor, not a ceiling: `x-forwarded-for` is client
- * controlled. For a hard guarantee, put this behind Cloud Run IAM (or an
- * authenticated proxy) and treat the limiter as defence in depth.
+ *  1. Bearer-gated by `requireBearer`, which compares the `Authorization`
+ *     header against `PIPELINE_RUN_TOKEN` using `crypto.timingSafeEqual`.
+ *     Production refuses the request (500) if the env var is unset so the
+ *     route can never silently fall open.
+ *  2. Rate-limited per client IP as defence in depth. The per-IP limit is a
+ *     floor, not a ceiling: `x-forwarded-for` is client controlled. With the
+ *     bearer guard in place, the limiter only ever sees authenticated
+ *     traffic, so its job is to bound an operator's own accidental loops
+ *     rather than to stop abuse.
+ *
+ * Trigger from outside the browser:
+ *
+ *   curl -X POST "$APP_URL/api/pipeline/run" \
+ *     -H "Authorization: Bearer $PIPELINE_RUN_TOKEN" \
+ *     -H "Content-Type: application/json" \
+ *     -d '{"connectedRealmId": 4401}'
  */
 
 /** One full run per 5 s, burst of 5. A human clicking "Run pipeline" is fine. */
@@ -28,6 +41,9 @@ const LIMIT = 5;
 const WINDOW_MS = 5_000;
 
 export async function POST(req: NextRequest) {
+  const unauthorized = requireBearer(req);
+  if (unauthorized) return unauthorized;
+
   const limited = enforceRateLimit(req, 'pipeline-run', LIMIT, WINDOW_MS);
   if (limited) return limited;
 

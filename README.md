@@ -55,6 +55,17 @@ in-process memory cache, so you can develop and demo the full UI offline.
 Every variable is optional. Copy `.env.example` to `.env.local` and fill in what
 you need; `.env.example` documents each one.
 
+### Pipeline bearer token
+
+`PIPELINE_RUN_TOKEN` — required in production, optional in local dev. This is a
+shared bearer secret that gates `POST /api/pipeline/run`. Generate one with
+`openssl rand -base64 32` (or any 32-byte random source, base64url-safe) and
+keep it out of version control. The route compares it against the
+`Authorization: Bearer <token>` header using `crypto.timingSafeEqual`; a
+mismatch returns 401, and production refuses to start if the variable is empty.
+Local dev (`NODE_ENV !== 'production'`) may leave it unset so `npm run dev`
+keeps working without ceremony.
+
 ### Battle.net API
 
 `BLIZZARD_CLIENT_ID`, `BLIZZARD_CLIENT_SECRET`, `BLIZZARD_REGION`
@@ -69,14 +80,6 @@ OAuth2 `client_credentials` flow. Access tokens are cached in-process with a
 
 Blobs are addressed as `data/cached/<realmId>/<shard>/<itemId>.bin`, where
 `<shard>` is `itemId & 0xff`. Omit these to use the in-memory cache.
-
-### Declared but not implemented
-
-`GEMINI_API_KEY` and the `@google/genai` dependency are present, and
-`metadata.json` advertises `MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API`, but **no
-code imports the SDK and there is no Gemini route.** The package is installed and
-paid for in the lockfile without doing anything. Either wire it up or drop the
-capability declaration and the dependency.
 
 ## Project layout
 
@@ -138,8 +141,8 @@ see `src/services/encoder.ts` for the authoritative layout and
 
 ## API
 
-All routes are public. The two read paths and `pipeline/run` are rate limited per
-client IP, returning `429` with a `Retry-After` header when over budget.
+Most routes are public. The two read paths and `pipeline/run` are rate limited
+per client IP, returning `429` with a `Retry-After` header when over budget.
 
 > **Rate limits are per instance.** The limiter keeps state in process memory, so
 > it resets on cold start and scales with instance count. It stops a single
@@ -150,12 +153,29 @@ client IP, returning `429` with a `Retry-After` header when over budget.
 | Method | Path                                       | Notes                                     |
 | ------ | ------------------------------------------ | ----------------------------------------- |
 | `GET`  | `/api/status`                              | Credential/storage/binary-codec health     |
-| `POST` | `/api/pipeline/run`                        | Full snapshot → aggregate → encode → store |
+| `POST` | `/api/pipeline/run`                        | Bearer-gated full snapshot → aggregate → encode → store |
 | `GET`  | `/api/data/cached/{realmId}/state.bin`     | Realm state blob, `application/octet-stream` |
 | `GET`  | `/api/data/cached/{realmId}/{hash}/{itemId}.bin` | Per-item blob                       |
 
 `realmId` and `itemId` must be positive in-range integers; anything else is a
 `400` rather than being coerced to a default.
+
+### Triggering `pipeline/run` outside the browser
+
+`POST /api/pipeline/run` is no longer reachable from the dashboard — the UI no
+longer ships the token to a browser bundle. Trigger it from a host where the
+token lives in an env var:
+
+```bash
+curl -X POST "$APP_URL/api/pipeline/run" \
+  -H "Authorization: Bearer $PIPELINE_RUN_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"connectedRealmId": 4401}'
+```
+
+Without a matching bearer the route answers 401 (opaque body — no probe signal).
+Production refuses to start if `PIPELINE_RUN_TOKEN` is empty. If the token ever
+leaks, rotate it: generate a new value, update the env var, redeploy.
 
 ## Quality gates
 

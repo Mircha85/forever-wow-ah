@@ -20,17 +20,10 @@ export interface MainCategory {
 
 export const WOW_AUCTION_CATEGORIES: MainCategory[] = [
   {
-    id: 'all',
-    label: 'All Categories',
-    icon: 'https://wow.zamimg.com/images/wow/icons/large/inv_misc_book_09.jpg',
-    subcategories: [],
-  },
-  {
     id: 'Weapons',
     label: 'Weapons',
     icon: 'https://wow.zamimg.com/images/wow/icons/large/inv_sword_04.jpg',
     subcategories: [
-      { id: 'all', label: 'All Weapons' },
       {
         id: 'One-Handed',
         label: 'One-Handed',
@@ -80,7 +73,6 @@ export const WOW_AUCTION_CATEGORIES: MainCategory[] = [
     label: 'Armor',
     icon: 'https://wow.zamimg.com/images/wow/icons/large/inv_chest_plate01.jpg',
     subcategories: [
-      { id: 'all', label: 'All Armor' },
       { id: 'Cloth', label: 'Cloth' },
       { id: 'Leather', label: 'Leather' },
       { id: 'Mail', label: 'Mail' },
@@ -95,7 +87,6 @@ export const WOW_AUCTION_CATEGORIES: MainCategory[] = [
     label: 'Container',
     icon: 'https://wow.zamimg.com/images/wow/icons/large/inv_misc_bag_08.jpg',
     subcategories: [
-      { id: 'all', label: 'All Containers' },
       { id: 'Bags', label: 'Bags' },
       {
         id: 'Profession Bags',
@@ -116,7 +107,6 @@ export const WOW_AUCTION_CATEGORIES: MainCategory[] = [
     label: 'Consumables',
     icon: 'https://wow.zamimg.com/images/wow/icons/large/inv_potion_51.jpg',
     subcategories: [
-      { id: 'all', label: 'All Consumables' },
       { id: 'Food & Drink', label: 'Food & Drink' },
       { id: 'Potions', label: 'Potions' },
       { id: 'Elixirs', label: 'Elixirs' },
@@ -130,7 +120,6 @@ export const WOW_AUCTION_CATEGORIES: MainCategory[] = [
     label: 'Trade Goods',
     icon: 'https://wow.zamimg.com/images/wow/icons/large/inv_ore_thorium_01.jpg',
     subcategories: [
-      { id: 'all', label: 'All Trade Goods' },
       { id: 'Cloth', label: 'Cloth' },
       { id: 'Leather', label: 'Leather' },
       { id: 'Metal & Stone', label: 'Metal & Stone' },
@@ -146,7 +135,6 @@ export const WOW_AUCTION_CATEGORIES: MainCategory[] = [
     label: 'Gems',
     icon: 'https://wow.zamimg.com/images/wow/icons/large/inv_misc_gem_diamond_02.jpg',
     subcategories: [
-      { id: 'all', label: 'All Gems' },
       {
         id: 'Cut Gems',
         label: 'Cut Gems',
@@ -169,7 +157,6 @@ export const WOW_AUCTION_CATEGORIES: MainCategory[] = [
     label: 'Item Enhancement',
     icon: 'https://wow.zamimg.com/images/wow/icons/large/inv_enchant_shardbrilliantlarge.jpg',
     subcategories: [
-      { id: 'all', label: 'All Item Enhancements' },
       { id: 'Enchants', label: 'Enchants' },
       { id: 'Armor Kits', label: 'Armor Kits' },
       { id: 'Scopes', label: 'Scopes' },
@@ -181,7 +168,6 @@ export const WOW_AUCTION_CATEGORIES: MainCategory[] = [
     label: 'Recipes',
     icon: 'https://wow.zamimg.com/images/wow/icons/large/inv_scroll_03.jpg',
     subcategories: [
-      { id: 'all', label: 'All Recipes' },
       { id: 'Alchemy', label: 'Alchemy' },
       { id: 'Blacksmithing', label: 'Blacksmithing' },
       { id: 'Cooking', label: 'Cooking' },
@@ -202,7 +188,6 @@ export const WOW_AUCTION_CATEGORIES: MainCategory[] = [
     label: 'Glyphs',
     icon: 'https://wow.zamimg.com/images/wow/icons/large/spell_holy_sealofwisdom.jpg',
     subcategories: [
-      { id: 'all', label: 'All Glyphs' },
       { id: 'Death Knight', label: 'Death Knight' },
       { id: 'Demon Hunter', label: 'Demon Hunter' },
       { id: 'Druid', label: 'Druid' },
@@ -223,7 +208,6 @@ export const WOW_AUCTION_CATEGORIES: MainCategory[] = [
     label: 'Battle Pets',
     icon: 'https://wow.zamimg.com/images/wow/icons/large/inv_box_petcarrier_01.jpg',
     subcategories: [
-      { id: 'all', label: 'All Battle Pets' },
       { id: 'Aquatic', label: 'Aquatic' },
       { id: 'Beast', label: 'Beast' },
       { id: 'Critter', label: 'Critter' },
@@ -241,7 +225,6 @@ export const WOW_AUCTION_CATEGORIES: MainCategory[] = [
     label: 'Mounts',
     icon: 'https://wow.zamimg.com/images/wow/icons/large/ability_mount_raptor.jpg',
     subcategories: [
-      { id: 'all', label: 'All Mounts' },
       { id: 'Faction Mounts', label: 'Faction Mounts' },
       { id: 'Dungeon & Raid Mounts', label: 'Dungeon & Raid Mounts' },
       { id: 'Profession-Crafted Mounts', label: 'Profession-Crafted Mounts' },
@@ -254,7 +237,6 @@ export const WOW_AUCTION_CATEGORIES: MainCategory[] = [
     label: 'Miscellaneous',
     icon: 'https://wow.zamimg.com/images/wow/icons/large/inv_misc_gift_01.jpg',
     subcategories: [
-      { id: 'all', label: 'All Miscellaneous' },
       { id: 'Quest Items', label: 'Quest Items' },
       { id: 'Holiday Items', label: 'Holiday Items' },
       { id: 'Junk', label: 'Junk' },

@@ -14,10 +14,10 @@ interface AuctionChartProps {
   itemName?: string;
 }
 
-export const AuctionChart: React.FC<AuctionChartProps> = ({
+export function AuctionChart({
   dailyHistory,
   hourlyDeltas,
-}) => {
+}: AuctionChartProps) {
   const [timeframe, setTimeframe] = useState<'24h' | '7d' | '14d'>('14d');
   const [showMin, setShowMin] = useState(true);
   const [showMedian, setShowMedian] = useState(true);

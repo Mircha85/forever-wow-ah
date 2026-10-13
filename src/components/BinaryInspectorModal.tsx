@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useMemo } from 'react';
+import { useMemo } from 'react';
 import { X, Download, Binary, CheckCircle2 } from 'lucide-react';
 import { type DecodedItemBin } from '../types/auction';
 
@@ -10,11 +10,11 @@ interface BinaryInspectorModalProps {
   onClose: () => void;
 }
 
-export const BinaryInspectorModal: React.FC<BinaryInspectorModalProps> = ({
+export function BinaryInspectorModal({
   itemData,
   rawBuffer,
   onClose,
-}) => {
+}: BinaryInspectorModalProps) {
   // Generate hex dump from rawBuffer or fallback representation
   const hexDump = useMemo(() => {
     if (!rawBuffer) return [];

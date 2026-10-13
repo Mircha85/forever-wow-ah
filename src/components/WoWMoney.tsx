@@ -1,7 +1,5 @@
 'use client';
 
-import React from 'react';
-
 interface WoWMoneyProps {
   copper: number;
   className?: string;
@@ -9,12 +7,12 @@ interface WoWMoneyProps {
   showZeroSilverCopper?: boolean;
 }
 
-export const WoWMoney: React.FC<WoWMoneyProps> = ({
+export function WoWMoney({
   copper,
   className = '',
   size = 'md',
   showZeroSilverCopper = false,
-}) => {
+}: WoWMoneyProps) {
   const safeCopper = Math.max(0, Math.floor(copper || 0));
 
   const gold = Math.floor(safeCopper / 10000);

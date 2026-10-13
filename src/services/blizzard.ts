@@ -1,4 +1,24 @@
-import { type BlizzardAuctionSnapshot, type BlizzardAuctionItem } from '../types/auction';
+import { type BlizzardAuctionSnapshot, type BlizzardAuctionItem, type WowItemMetadata, type ItemQuality } from '../types/auction';
+
+/**
+ * Map Blizzard `quality.type` strings to the numeric quality code the
+ * existing `getQualityColor` family expects. Anything we don't recognise
+ * lands on common (1) so the UI still renders something legible.
+ */
+const QUALITY_TYPE_TO_NUMBER: Record<string, ItemQuality> = {
+  POOR: 0,
+  COMMON: 1,
+  UNCOMMON: 2,
+  RARE: 3,
+  EPIC: 4,
+  LEGENDARY: 5,
+  ARTIFACT: 6,
+  HEIRLOOM: 7,
+};
+
+/** Generic icon used when we have not fetched a media asset for the item. */
+const PLACEHOLDER_ICON =
+  'https://wow.zamimg.com/images/wow/icons/large/inv_misc_questionmark.jpg';
 
 export interface BlizzardConfig {
   clientId?: string;
@@ -74,6 +94,7 @@ export class BlizzardService {
   private clientSecret: string;
   private region: string;
   private namespace: string;
+  private itemNamespace: string;
   private locale: string;
   private token: string | null = null;
   private tokenExpiresAt = 0;
@@ -85,16 +106,24 @@ export class BlizzardService {
     this.region = config?.region || process.env.BLIZZARD_REGION || 'eu';
     this.locale = config?.locale || process.env.BLIZZARD_LOCALE || 'en_US';
 
-    // WoW: Forever is the Anniversary line, which Blizzard serves from
-    // `dynamic-classicann-{region}`. The previous default was
-    // `dynamic-{region}`, the Retail namespace — a request that succeeds
-    // against the wrong game rather than failing, which is the worse
-    // outcome. Override with BLIZZARD_NAMESPACE when Blizzard ships the
-    // Forever API and the namespace differs.
+    // Auction namespace (live data, mutations). WoW: Forever is the
+    // Anniversary line, served from `dynamic-classicann-{region}`. The
+    // previous default was `dynamic-{region}` — the Retail namespace —
+    // a request that succeeds against the wrong game rather than
+    // failing, which is the worse outcome.
     this.namespace =
       config?.namespace ||
       process.env.BLIZZARD_NAMESPACE ||
       `dynamic-classicann-${this.region}`;
+
+    // Item metadata namespace (static catalog). Lives separately from
+    // the auction namespace because the auction API only ships items
+    // currently in the live AH — many of which the static catalog still
+    // knows about but the dynamic one returns 404 for.
+    this.itemNamespace =
+      (config as unknown as { itemNamespace?: string } | undefined)?.itemNamespace ||
+      process.env.BLIZZARD_ITEM_NAMESPACE ||
+      `static-${this.region}`;
   }
 
   /**
@@ -302,6 +331,105 @@ export class BlizzardService {
 
     snapshot.lastModified = lastModified ?? new Date().toISOString();
     return { snapshot, source: 'blizzard_api', lastModified: snapshot.lastModified };
+  }
+
+  /**
+   * Fetch item metadata (name, class, subclass, level, quality) for one
+   * itemId from Blizzard. Returns null on 404 (item missing or private
+   * namespace), throws `BlizzardApiError` on anything else. Icon is left
+   * as a placeholder; the dedicated `/data/wow/media/item/{id}` call costs
+   * an extra round-trip per item and is deferred until needed.
+   */
+  public async fetchItemMetadata(itemId: number): Promise<WowItemMetadata | null> {
+    if (!this.hasCredentials()) {
+      return null;
+    }
+    if (!Number.isSafeInteger(itemId) || itemId <= 0) {
+      return null;
+    }
+
+    const url =
+      `https://${this.region}.api.blizzard.com/data/wow/item/${itemId}` +
+      `?namespace=${this.itemNamespace}&locale=${this.locale}`;
+    const headers: Record<string, string> = {
+      Authorization: `Bearer ${await this.getAccessToken()}`,
+    };
+
+    const send = (h: Record<string, string>) =>
+      fetch(url, { headers: h, signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) });
+
+    let response: Response;
+    try {
+      response = await send(headers);
+    } catch (err: unknown) {
+      throw new BlizzardApiError(
+        `Could not reach ${this.namespace} for item ${itemId}: ` +
+          `${err instanceof Error ? err.message : String(err)}`,
+        { realmId: itemId }
+      );
+    }
+
+    if (response.status === 404) {
+      return null;
+    }
+
+    // Token can expire mid-session; one retry on 401.
+    if (response.status === 401) {
+      this.token = null;
+      this.tokenExpiresAt = 0;
+      try {
+        response = await send({ Authorization: `Bearer ${await this.getAccessToken()}` });
+      } catch (err: unknown) {
+        throw err instanceof BlizzardApiError
+          ? err
+          : new BlizzardApiError(`Re-authentication failed: ${String(err)}`, { realmId: itemId });
+      }
+    }
+
+    if (response.status === 429) {
+      throw new BlizzardApiError(
+        `Battle.net is rate limiting item ${itemId} (HTTP 429).`,
+        {
+          status: 429,
+          realmId: itemId,
+          retryAfterMs: parseRetryAfter(response.headers.get('retry-after')),
+        }
+      );
+    }
+
+    if (!response.ok) {
+      const detail = await safeText(response).catch(() => '');
+      throw new BlizzardApiError(
+        `Battle.net returned HTTP ${response.status} for item ${itemId} in ${this.itemNamespace}.`,
+        { status: response.status, realmId: itemId, detail }
+      );
+    }
+
+    // Blizzard response shape (en_US locale):
+    //   { id, name, level, required_level,
+    //     quality: { type: "EPIC", name: "Epic" },
+    //     item_class:    { id: 4, name: "Armor" },
+    //     item_subclass: { id: 1, name: "Cloth" } }
+    const data = (await response.json()) as Record<string, unknown>;
+    const qualityObj = data.quality as { type?: string; name?: string } | undefined;
+    const itemClassObj = data.item_class as { name?: string } | undefined;
+    const itemSubclassObj = data.item_subclass as { name?: string } | undefined;
+
+    const qualityRaw = qualityObj?.type?.toUpperCase();
+    const quality: ItemQuality = qualityRaw
+      ? QUALITY_TYPE_TO_NUMBER[qualityRaw] ?? 1
+      : 1;
+
+    return {
+      id: typeof data.id === 'number' ? data.id : itemId,
+      name: typeof data.name === 'string' ? data.name : `Item #${itemId}`,
+      icon: PLACEHOLDER_ICON,
+      quality,
+      itemClass: itemClassObj?.name ?? 'Miscellaneous',
+      subclass: itemSubclassObj?.name ?? 'Junk',
+      itemLevel: typeof data.level === 'number' ? data.level : 0,
+      requiredLevel: typeof data.required_level === 'number' ? data.required_level : 0,
+    };
   }
 
   /**

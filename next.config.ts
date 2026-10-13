@@ -43,6 +43,12 @@ const nextConfig: NextConfig = {
         ignored: /.*/,
       };
     }
+    if (dev) {
+      // Persistent FS cache (PackFileCacheStrategy) OOMs on this codebase's
+      // route graph when accumulating .next/cache/webpack packs across hot
+      // reloads. Keep HMR/rebuild fast by relying on the in-memory cache only.
+      config.cache = false;
+    }
     return config;
   },
 };

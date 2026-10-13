@@ -1,0 +1,14 @@
+node_modules/
+.next/
+out/
+coverage/
+.git/
+.env*
+!.env.example
+docs/
+*.log
+*.tsbuildinfo
+.DS_Store
+extraction-summary.json
+extraction-direct-summary.json
+scripts/extract-all-realms.js
