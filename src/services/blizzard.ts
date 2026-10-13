@@ -31,14 +31,13 @@ export interface BlizzardConfig {
 /**
  * Outcome of a live fetch attempt.
  *
- * `synthetic_forever` is only ever produced when credentials are absent —
- * that is the offline demo mode. It is never used to paper over a failed
- * live request, because a dashboard full of plausible invented numbers is
- * far harder to notice than an error.
+ * The `source` field is always `'blizzard_api'`; a missing-credentials
+ * fetch fails loud via `BlizzardApiError` rather than silently returning
+ * demo data.
  */
 export type AuctionFetchResult = {
   snapshot: BlizzardAuctionSnapshot;
-  source: 'blizzard_api' | 'synthetic_forever';
+  source: 'blizzard_api';
   lastModified: string | null;
 };
 
@@ -218,14 +217,9 @@ export class BlizzardService {
     connectedRealmId: number,
     forceFetch = true
   ): Promise<AuctionFetchResult> {
-    if (!this.hasCredentials()) {
-      return {
-        snapshot: this.generateSyntheticWoWForeverSnapshot(connectedRealmId),
-        source: 'synthetic_forever',
-        lastModified: new Date().toISOString(),
-      };
-    }
-
+    // No synthetic path on missing creds. `getAccessToken` throws
+    // `BlizzardApiError` if creds are absent; the route's error handler
+    // surfaces that as a 500 with the actionable message.
     const url = this.auctionsUrl(connectedRealmId);
     const headers: Record<string, string> = {
       Authorization: `Bearer ${await this.getAccessToken()}`,
@@ -341,9 +335,8 @@ export class BlizzardService {
    * an extra round-trip per item and is deferred until needed.
    */
   public async fetchItemMetadata(itemId: number): Promise<WowItemMetadata | null> {
-    if (!this.hasCredentials()) {
-      return null;
-    }
+    // Missing creds surfaces as BlizzardApiError via getAccessToken. Caller
+    // (e.g. /api/items-meta) is responsible for pre-checking credentials.
     if (!Number.isSafeInteger(itemId) || itemId <= 0) {
       return null;
     }
@@ -429,147 +422,6 @@ export class BlizzardService {
       subclass: itemSubclassObj?.name ?? 'Junk',
       itemLevel: typeof data.level === 'number' ? data.level : 0,
       requiredLevel: typeof data.required_level === 'number' ? data.required_level : 0,
-    };
-  }
-
-  /**
-   * Generates a high-fidelity synthetic auction snapshot for WoW: Forever.
-   *
-   * Only reachable when no credentials are configured. It is a demo
-   * fixture, not a fallback: nothing on a live code path should reach here.
-   */
-  public generateSyntheticWoWForeverSnapshot(connectedRealmId: number): BlizzardAuctionSnapshot {
-    const auctions: BlizzardAuctionItem[] = [];
-    let auctionIdCounter = 100000;
-
-    const catalog = [
-      { id: 13464, name: 'Golden Sansam', basePrice: 4200, count: 45, isCommodity: true },
-      { id: 13465, name: 'Mountain Silversage', basePrice: 18500, count: 60, isCommodity: true },
-      { id: 13466, name: 'Plaguebloom', basePrice: 24500, count: 70, isCommodity: true },
-      { id: 13467, name: 'Icecap', basePrice: 12000, count: 50, isCommodity: true },
-      { id: 13468, name: 'Black Lotus', basePrice: 1450000, count: 18, isCommodity: true },
-      { id: 12360, name: 'Arcanite Bar', basePrice: 850000, count: 35, isCommodity: true },
-      { id: 12359, name: 'Thorium Ore', basePrice: 3200, count: 85, isCommodity: true },
-      { id: 14344, name: 'Large Brilliant Shard', basePrice: 48000, count: 40, isCommodity: true },
-      { id: 14343, name: 'Small Brilliant Shard', basePrice: 15000, count: 30, isCommodity: true },
-      { id: 16204, name: 'Illusion Dust', basePrice: 1800, count: 220, isCommodity: true },
-      { id: 13511, name: 'Flask of the Titans', basePrice: 1850000, count: 22, isCommodity: false },
-      { id: 13512, name: 'Flask of Supreme Power', basePrice: 2150000, count: 28, isCommodity: false },
-      { id: 13513, name: 'Flask of Distilled Wisdom', basePrice: 1950000, count: 20, isCommodity: false },
-      { id: 19019, name: 'Thunderfury, Blessed Blade', basePrice: 95000000, count: 2, isCommodity: false },
-      { id: 11684, name: 'Ironfoe', basePrice: 12500000, count: 4, isCommodity: false },
-      { id: 12640, name: 'Lionheart Helm', basePrice: 14200000, count: 6, isCommodity: false },
-      { id: 14552, name: 'Stockade Pauldrons', basePrice: 280000, count: 12, isCommodity: false },
-      { id: 20725, name: 'Nexus Crystal', basePrice: 165000, count: 32, isCommodity: true },
-      { id: 17203, name: 'Sulfuron Ingot', basePrice: 8800000, count: 8, isCommodity: false },
-      { id: 14155, name: 'Mooncloth', basePrice: 320000, count: 25, isCommodity: true },
-      { id: 12800, name: 'Azerothian Diamond', basePrice: 98000, count: 35, isCommodity: true },
-      { id: 12799, name: 'Large Opal', basePrice: 75000, count: 40, isCommodity: true },
-      { id: 7078, name: 'Essence of Fire', basePrice: 110000, count: 50, isCommodity: true },
-      { id: 7076, name: 'Essence of Earth', basePrice: 92000, count: 45, isCommodity: true },
-      { id: 7080, name: 'Essence of Water', basePrice: 185000, count: 55, isCommodity: true },
-      { id: 7082, name: 'Essence of Air', basePrice: 220000, count: 40, isCommodity: true },
-      { id: 811, name: 'Axe of the Deep Woods', basePrice: 7500000, count: 5, isCommodity: false },
-      { id: 17071, name: 'Gutgore Ripper', basePrice: 14000000, count: 4, isCommodity: false },
-      { id: 12784, name: 'Arcanite Reaper', basePrice: 18000000, count: 6, isCommodity: false },
-      { id: 17076, name: "Bonereaver's Edge", basePrice: 45000000, count: 2, isCommodity: false },
-      { id: 18842, name: 'Staff of Dominance', basePrice: 22000000, count: 3, isCommodity: false },
-      { id: 12583, name: 'Blackhand Doomsaw', basePrice: 6500000, count: 5, isCommodity: false },
-      { id: 18713, name: "Rhok'delar, Longbow", basePrice: 38000000, count: 2, isCommodity: false },
-      { id: 17072, name: 'Blastershot Launcher', basePrice: 16000000, count: 3, isCommodity: false },
-      { id: 17077, name: 'Crimson Shocker', basePrice: 12000000, count: 4, isCommodity: false },
-      { id: 19315, name: "Therazane's Touch", basePrice: 8500000, count: 4, isCommodity: false },
-      { id: 19349, name: 'Elementium Reinforced Bulwark', basePrice: 26000000, count: 3, isCommodity: false },
-      { id: 14154, name: 'Robes of the Archmage', basePrice: 9500000, count: 4, isCommodity: false },
-      { id: 16908, name: 'Bloodfang Hood', basePrice: 24000000, count: 3, isCommodity: false },
-      { id: 7938, name: 'Truesilver Breastplate', basePrice: 3800000, count: 6, isCommodity: false },
-      { id: 12639, name: 'Stronghold Gauntlets', basePrice: 11000000, count: 4, isCommodity: false },
-      { id: 7997, name: 'Red Defias Mask', basePrice: 850000, count: 12, isCommodity: false },
-      { id: 4500, name: "Traveler's Backpack", basePrice: 1800000, count: 10, isCommodity: false },
-      { id: 22251, name: 'Cenarion Herb Bag', basePrice: 4200000, count: 8, isCommodity: false },
-      { id: 22248, name: 'Mining Sack', basePrice: 3500000, count: 8, isCommodity: false },
-      { id: 13446, name: 'Major Healing Potion', basePrice: 25000, count: 80, isCommodity: true },
-      { id: 13444, name: 'Major Mana Potion', basePrice: 42000, count: 90, isCommodity: true },
-      { id: 13452, name: 'Elixir of the Mongoose', basePrice: 65000, count: 70, isCommodity: true },
-      { id: 20452, name: 'Smoked Desert Dumplings', basePrice: 15000, count: 60, isCommodity: true },
-      { id: 12662, name: 'Demonic Rune', basePrice: 120000, count: 35, isCommodity: true },
-      { id: 194700, name: 'Vantus Rune: Mythic Vault', basePrice: 350000, count: 25, isCommodity: true },
-      { id: 14256, name: 'Felcloth', basePrice: 85000, count: 50, isCommodity: true },
-      { id: 11370, name: 'Dark Iron Ore', basePrice: 45000, count: 60, isCommodity: true },
-      { id: 129032, name: 'Sallow Pigment', basePrice: 60000, count: 40, isCommodity: true },
-      { id: 13759, name: 'Raw Nightfin Snapper', basePrice: 18000, count: 75, isCommodity: true },
-      { id: 23095, name: 'Bold Ruby', basePrice: 680000, count: 20, isCommodity: true },
-      { id: 23097, name: 'Delicate Living Ruby', basePrice: 720000, count: 18, isCommodity: true },
-      { id: 12363, name: 'Arcane Crystal', basePrice: 480000, count: 35, isCommodity: true },
-      { id: 18251, name: 'Core Armor Kit', basePrice: 950000, count: 15, isCommodity: false },
-      { id: 10546, name: 'Sniper Scope', basePrice: 320000, count: 12, isCommodity: false },
-      { id: 12404, name: 'Dense Sharpening Stone', basePrice: 45000, count: 40, isCommodity: true },
-      { id: 13518, name: 'Recipe: Flask of the Titans', basePrice: 85000000, count: 2, isCommodity: false },
-      { id: 12717, name: 'Plans: Arcanite Reaper', basePrice: 45000000, count: 3, isCommodity: false },
-      { id: 14488, name: 'Pattern: Robe of the Archmage', basePrice: 28000000, count: 3, isCommodity: false },
-      { id: 6661, name: 'Recipe: Savory Deviate Delight', basePrice: 6500000, count: 6, isCommodity: false },
-      { id: 44928, name: 'Glyph of Stars', basePrice: 450000, count: 15, isCommodity: false },
-      { id: 43339, name: 'Glyph of Polymorph: Penguin', basePrice: 650000, count: 12, isCommodity: false },
-      { id: 43425, name: 'Glyph of Shield Wall', basePrice: 380000, count: 14, isCommodity: false },
-      { id: 20769, name: 'Disgusting Oozeling', basePrice: 18500000, count: 3, isCommodity: false },
-      { id: 10822, name: 'Dark Whelpling', basePrice: 12000000, count: 4, isCommodity: false },
-      { id: 8494, name: 'Hyacinth Macaw', basePrice: 35000000, count: 2, isCommodity: false },
-      { id: 8491, name: 'Ancona Chicken', basePrice: 450000, count: 10, isCommodity: false },
-      { id: 13335, name: "Deathcharger's Reins", basePrice: 95000000, count: 1, isCommodity: false },
-      { id: 13086, name: 'Reins of Winterspring Frostsaber', basePrice: 80000000, count: 2, isCommodity: false },
-      { id: 34060, name: 'Flying Machine Control', basePrice: 15000000, count: 3, isCommodity: false },
-      { id: 18422, name: 'Head of Onyxia', basePrice: 5000000, count: 4, isCommodity: false },
-      { id: 21524, name: 'Red Winter Hat', basePrice: 650000, count: 15, isCommodity: false },
-      { id: 1978, name: 'Orb of Deception', basePrice: 22000000, count: 3, isCommodity: false },
-    ];
-
-    const timeOptions: Array<'SHORT' | 'MEDIUM' | 'LONG' | 'VERY_LONG'> = [
-      'SHORT',
-      'MEDIUM',
-      'LONG',
-      'VERY_LONG',
-    ];
-
-    for (const item of catalog) {
-      for (let i = 0; i < item.count; i++) {
-        auctionIdCounter++;
-        const priceVariance = 0.75 + Math.random() * 0.5;
-        const currentUnitPrice = Math.round(item.basePrice * priceVariance);
-
-        const quantity = item.isCommodity
-          ? [1, 5, 10, 20][Math.floor(Math.random() * 4)]
-          : 1;
-        const timeLeft = timeOptions[Math.floor(Math.random() * timeOptions.length)];
-
-        if (item.isCommodity) {
-          auctions.push({
-            id: auctionIdCounter,
-            item: { id: item.id },
-            quantity,
-            unit_price: currentUnitPrice,
-            time_left: timeLeft,
-          });
-        } else {
-          const buyout = currentUnitPrice * quantity;
-          const bid = Math.round(buyout * (0.8 + Math.random() * 0.15));
-          auctions.push({
-            id: auctionIdCounter,
-            item: { id: item.id },
-            quantity,
-            buyout,
-            bid,
-            time_left: timeLeft,
-          });
-        }
-      }
-    }
-
-    return {
-      connected_realm: {
-        href: `https://${this.region}.api.blizzard.com/data/wow/connected-realm/${connectedRealmId}`,
-      },
-      auctions,
-      lastModified: new Date().toISOString(),
     };
   }
 }

@@ -340,39 +340,6 @@ export class AuctionAggregator {
     }
     hourlyDeltas.push(...deltas.reverse());
 
-    // Specific user requested test values for item ID #16204 (1k, 1.1k, 5k, 10k, 800k):
-    if (itemId === 16204 && hourlyDeltas.length >= 60) {
-      // Hour 5 ago: 800k quantity (800,000) & 1k gold buyout (10,000,000 copper)
-      const h800k = hourlyDeltas.length - 5;
-      hourlyDeltas[h800k].quantity = 800000;
-      hourlyDeltas[h800k].minPrice = 10000000; // 1,000g -> displays as 1k
-      hourlyDeltas[h800k].medianPrice = 10500000;
-
-      // Hour 12 ago: 10k quantity (10,000) & 5k gold buyout (50,000,000 copper)
-      const h10k = hourlyDeltas.length - 12;
-      hourlyDeltas[h10k].quantity = 10000;
-      hourlyDeltas[h10k].minPrice = 50000000; // 5,000g -> displays as 5k
-      hourlyDeltas[h10k].medianPrice = 52000000;
-
-      // Hour 21 ago: 5k quantity (5,000) & 10k gold buyout (100,000,000 copper)
-      const h5k = hourlyDeltas.length - 21;
-      hourlyDeltas[h5k].quantity = 5000;
-      hourlyDeltas[h5k].minPrice = 100000000; // 10,000g -> displays as 10k
-      hourlyDeltas[h5k].medianPrice = 105000000;
-
-      // Hour 29 ago: 1.1k quantity (1,100) & 250k gold buyout
-      const h1_1k = hourlyDeltas.length - 29;
-      hourlyDeltas[h1_1k].quantity = 1100;
-      hourlyDeltas[h1_1k].minPrice = 2500000000; // 250,000g -> displays as 250k
-      hourlyDeltas[h1_1k].medianPrice = 2600000000;
-
-      // Hour 38 ago: 1k quantity (1,000) & 1.1k gold buyout (11,000,000 copper)
-      const h1k = hourlyDeltas.length - 38;
-      hourlyDeltas[h1k].quantity = 1000;
-      hourlyDeltas[h1k].minPrice = 11000000; // 1,100g -> displays as 1.1k
-      hourlyDeltas[h1k].medianPrice = 11500000;
-    }
-
     // Calculate 24h delta percentages
     const dayAgoPoint = dailyHistory[dailyHistory.length - 1];
     const priceDelta24h =
@@ -408,23 +375,6 @@ export class AuctionAggregator {
     let medianPrice = 2200;
     let meanPrice = 2100;
     let totalQty = 120;
-
-    if (itemId === 16204) {
-      minPrice = 10000000; // 1,000g buyout test base
-      medianPrice = 10500000;
-      meanPrice = 10200000;
-      totalQty = 800000;
-    } else if (itemId === 13468) {
-      minPrice = 1450000; // 145g
-      medianPrice = 1520000;
-      meanPrice = 1500000;
-      totalQty = 18;
-    } else if (itemId === 12360) {
-      minPrice = 850000; // 85g
-      medianPrice = 890000;
-      meanPrice = 870000;
-      totalQty = 35;
-    }
 
     const activeLots: ActiveAuctionLot[] = [];
     const lotsCount = Math.min(25, Math.max(5, Math.floor(totalQty / 10)));
