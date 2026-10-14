@@ -1,5 +1,6 @@
 'use client';
 
+import { useEffect, useState } from 'react';
 import {
   Search,
   Filter,
@@ -22,6 +23,13 @@ import type { StateItemSummary, WowItemMetadata } from '@/src/types/auction';
 
 export interface CatalogItem extends StateItemSummary {
   meta: WowItemMetadata;
+}
+
+interface LiveRealm {
+  id: number;
+  name: string;
+  region: 'eu' | 'us';
+  lastUpdated: string | null;
 }
 
 interface CategoryCount {
@@ -82,6 +90,33 @@ export function CatalogView({
   onTriggerSearch,
   onClearFilters,
 }: CatalogViewProps) {
+  // Fetch live realm list from R2 (via /api/realms). Names come from Blizzard
+  // and are cached server-side; the first call costs ~1 HTTP request per
+  // realm, subsequent calls are O(1) cache hits.
+  const [liveRealms, setLiveRealms] = useState<LiveRealm[]>([]);
+  useEffect(() => {
+    let ignore = false;
+    (async () => {
+      try {
+        const res = await fetch('/api/realms?product=retail&region=eu', { cache: 'no-store' });
+        if (!res.ok) return;
+        const json = (await res.json()) as { realms: LiveRealm[] };
+        if (!ignore) setLiveRealms(json.realms ?? []);
+      } catch {
+        // silent — fall back to hardcoded CONNECTED_REALMS
+      }
+    })();
+    return () => {
+      ignore = true;
+    };
+  }, []);
+
+  // Prefer the live list (cached realms in R2). Fall back to the hardcoded
+  // list so the dropdown always has at least one option.
+  const realmOptions: LiveRealm[] = liveRealms.length > 0
+    ? liveRealms
+    : (CONNECTED_REALMS as unknown as LiveRealm[]);
+
   return (
     <div className="flex flex-col w-full gap-4">
       {/* Top row: Realm + Search - full width */}
@@ -94,9 +129,9 @@ export function CatalogView({
             className="appearance-none bg-slate-950 border border-slate-800 hover:border-slate-700 text-[11px] sm:text-xs text-slate-200 font-friz py-2 pl-2.5 sm:pl-3 pr-7 sm:pr-8 rounded-lg focus:outline-none focus:ring-1 focus:ring-amber-500/50 cursor-pointer max-w-[140px] sm:max-w-[200px] truncate"
             title="Select server/realm"
           >
-            {CONNECTED_REALMS.map((r) => (
+            {realmOptions.map((r) => (
               <option key={r.id} value={r.id}>
-                {r.name.replace(/\s*\(Connected\)/i, '')}
+                {r.name}
               </option>
             ))}
           </select>

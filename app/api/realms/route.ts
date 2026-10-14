@@ -1,12 +1,22 @@
 import { type NextRequest, NextResponse } from 'next/server';
 import { R2Service } from '@/src/services/r2';
-import { badRequest, enforceRateLimit } from '@/src/utils/apiGuard';
+import { BlizzardService } from '@/src/services/blizzard';
+import { badRequest, enforceRateLimit, upstreamError } from '@/src/utils/apiGuard';
 
 export interface RealmListEntry {
   id: number;
   region: 'eu' | 'us';
+  name: string;
   lastUpdated: string | null;
 }
+
+/** In-memory cache of (product, region, realmId) → name. Survives only as
+ *  long as the Next.js process does; refetches on cold start. Acceptable
+ *  here because Blizzard's connected-realm endpoint is rate-limited but
+ *  cheap, and the cache hits amortise across dashboard renders. */
+const NAME_CACHE = (globalThis as {
+  __realmNameCache?: Map<string, string>;
+}).__realmNameCache ??= new Map<string, string>();
 
 /** 60 requests per minute per IP — dashboard polls on mount + after each run. */
 const LIMIT = 60;
@@ -34,6 +44,7 @@ export async function GET(req: NextRequest) {
 
   try {
     const r2 = new R2Service();
+    const blizzard = new BlizzardService({ region });
     const { prefixes } = await r2.listKeys(`data/cached/${product}/${region}/`, '/');
 
     const realms: RealmListEntry[] = [];
@@ -41,10 +52,22 @@ export async function GET(req: NextRequest) {
       const match = prefix.match(/^data\/cached\/[^/]+\/[^/]+\/(\d+)\/$/);
       if (!match) continue;
       const id = Number(match[1]);
+      const cacheKey = `${product}:${region}:${id}`;
+      let name = NAME_CACHE.get(cacheKey);
+      if (!name) {
+        try {
+          const live = await blizzard.fetchConnectedRealmName(id);
+          name = live ?? `#${id}`;
+        } catch {
+          name = `#${id}`;
+        }
+        NAME_CACHE.set(cacheKey, name);
+      }
       const meta = await r2.getBinMetadata(`data/cached/${product}/${region}/${id}/state.bin`);
       realms.push({
         id,
         region,
+        name,
         lastUpdated: meta?.lastModified ? meta.lastModified.toISOString() : null,
       });
     }
@@ -53,9 +76,6 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json({ region, product, realms });
   } catch (err: unknown) {
-    return new NextResponse(
-      `Failed to list realms: ${err instanceof Error ? err.message : String(err)}`,
-      { status: 500 }
-    );
+    return upstreamError(err, 'realms-list');
   }
 }

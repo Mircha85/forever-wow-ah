@@ -146,6 +146,29 @@ export class BlizzardService {
   }
 
   /**
+   * Resolve a connected-realm id to its display name. Returns null when
+   * Blizzard 404s or the call fails for any reason — callers fall back to
+   * the numeric id as a label. Best-effort, never throws.
+   */
+  public async fetchConnectedRealmName(connectedRealmId: number): Promise<string | null> {
+    if (!this.hasCredentials()) return null;
+    const url =
+      `https://${this.region}.api.blizzard.com/data/wow/connected-realm/${connectedRealmId}` +
+      `?namespace=dynamic-${this.region}&locale=${this.locale}`;
+    try {
+      const response = await fetch(url, {
+        headers: { Authorization: `Bearer ${await this.getAccessToken()}` },
+        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+      });
+      if (!response.ok) return null;
+      const data = (await response.json()) as { name?: string };
+      return typeof data.name === 'string' ? data.name : null;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
    * Acquire or auto-refresh an OAuth2 client_credentials access token.
    */
   public async getAccessToken(): Promise<string> {
