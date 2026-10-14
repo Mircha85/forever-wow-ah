@@ -1,15 +1,16 @@
 /**
  * Item metadata helpers.
  *
- * The hardcoded `WOW_ITEMS_CATALOG` was removed in favour of the live
- * `BlizzardService.fetchItemMetadata` lookup plus the in-memory
- * `itemMetadataCache`. Until the cache is warm for an id, callers fall
- * through to the placeholder returned here so the UI renders something
- * legible instead of crashing.
+ * The hardcoded `WOW_ITEMS_CATALOG` and `CONNECTED_REALMS` were removed in
+ * favour of live lookups:
+ *   - item metadata: `itemMetadataCache.getCachedMetadata(id)` +
+ *     `warmMetadataForIds` (Blizzard-backed).
+ *   - connected realms: `GET /api/realms?region=eu|us` (R2-backed
+ *     enumeration, Blizzard-resolved labels).
  *
- * `CONNECTED_REALMS` is still hardcoded and will be replaced by
- * `GET /api/realms?region=eu|us` (R2-backed enumeration) in a
- * follow-up — kept here to avoid changing every component in one PR.
+ * `getItemMetadata` stays as the synchronous fallback that returns a
+ * placeholder until the cache is warm, so the UI renders something
+ * legible instead of crashing.
  */
 
 import { type WowItemMetadata } from '../types/auction';
@@ -24,19 +25,6 @@ const PLACEHOLDER_ICON =
  * @deprecated use `itemMetadataCache.getCachedMetadata` + `warmMetadataForIds`
  */
 export const WOW_ITEMS_CATALOG: Record<number, WowItemMetadata> = {};
-
-export const CONNECTED_REALMS: Array<{
-  id: number;
-  name: string;
-  region: 'eu' | 'us';
-  slug: string;
-  population: string;
-}> = [
-  { id: 4401, name: 'Aegwynn', region: 'eu', slug: 'aegwynn', population: 'High' },
-  { id: 4402, name: 'Aggramar', region: 'eu', slug: 'aggramar', population: 'High' },
-  { id: 4403, name: 'AhnQiraj', region: 'eu', slug: 'ahnqiraj', population: 'Medium' },
-  { id: 1305, name: 'Silvermoon', region: 'eu', slug: 'silvermoon', population: 'High' },
-];
 
 export function getItemMetadata(id: number): WowItemMetadata {
   // Synchronous fallback for components that need an immediate answer.

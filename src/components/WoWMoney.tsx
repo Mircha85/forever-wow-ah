@@ -3,7 +3,7 @@
 interface WoWMoneyProps {
   copper: number;
   className?: string;
-  size?: 'xs' | 'sm' | 'md' | 'lg';
+  size?: 'xs' | 'sm' | 'md' | 'lg' | 'xl';
   showZeroSilverCopper?: boolean;
 }
 
@@ -38,6 +38,11 @@ export function WoWMoney({
     lg: {
       text: 'text-[17px] font-narrow font-semibold',
       coin: 'w-4 h-4 ml-1',
+      gap: 'gap-2',
+    },
+    xl: {
+      text: 'text-[17.8px] font-narrow font-normal',
+      coin: 'w-[18px] h-[18px] ml-1',
       gap: 'gap-2',
     },
   }[size];

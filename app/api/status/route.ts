@@ -1,7 +1,6 @@
 import { NextResponse } from 'next/server';
 import { BlizzardService } from '@/src/services/blizzard';
 import { R2Service } from '@/src/services/r2';
-import { CONNECTED_REALMS } from '@/src/data/itemsCatalog';
 
 export function GET() {
   const blizzard = new BlizzardService();
@@ -35,6 +34,8 @@ export function GET() {
         endianness: 'LITTLE_ENDIAN',
       },
     },
-    realms: CONNECTED_REALMS,
+    // Hardcoded realm list removed; the live enumeration lives at
+    // GET /api/realms?product=&region= and is the single source of truth.
+    realms: [],
   });
 }

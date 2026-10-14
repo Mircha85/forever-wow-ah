@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   Search,
   Filter,
@@ -8,13 +8,12 @@ import {
   ChevronDown,
   ChevronRight,
   X,
-  TrendingUp,
-  TrendingDown,
+  ArrowUp,
+  ArrowDown,
   Star,
 } from 'lucide-react';
 import { WoWMoney } from '@/src/components/WoWMoney';
 import {
-  CONNECTED_REALMS,
   getQualityBorderColor,
   getQualityColor,
 } from '@/src/data/itemsCatalog';
@@ -103,7 +102,8 @@ export function CatalogView({
         const json = (await res.json()) as { realms: LiveRealm[] };
         if (!ignore) setLiveRealms(json.realms ?? []);
       } catch {
-        // silent — fall back to hardcoded CONNECTED_REALMS
+        // silent — dropdown will show the "Loading realms…" option until
+        // a successful refetch lands.
       }
     })();
     return () => {
@@ -111,11 +111,46 @@ export function CatalogView({
     };
   }, []);
 
-  // Prefer the live list (cached realms in R2). Fall back to the hardcoded
-  // list so the dropdown always has at least one option.
-  const realmOptions: LiveRealm[] = liveRealms.length > 0
-    ? liveRealms
-    : (CONNECTED_REALMS as unknown as LiveRealm[]);
+  // Live enumeration from /api/realms. No hardcoded fallback — we want
+  // real names only. When the fetch hasn't landed yet the dropdown shows
+  // a single disabled "Loading realms…" option.
+  const realmOptions: LiveRealm[] = liveRealms;
+
+  // Sort state. Click a header to set it as the sort key; click again to
+  // flip asc/desc. Star column stays non-sortable.
+  type SortKey = 'minPrice' | 'name';
+  const [sortKey, setSortKey] = useState<SortKey>('minPrice');
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
+
+  const sortedItems = useMemo(() => {
+    const arr = [...processedItems];
+    arr.sort((a, b) => {
+      const cmp =
+        sortKey === 'minPrice'
+          ? a.minPrice - b.minPrice
+          : a.meta.name.localeCompare(b.meta.name);
+      return sortDir === 'asc' ? cmp : -cmp;
+    });
+    return arr;
+  }, [processedItems, sortKey, sortDir]);
+
+  const toggleSort = (key: SortKey) => {
+    if (sortKey === key) {
+      setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
+    } else {
+      setSortKey(key);
+      setSortDir('asc');
+    }
+  };
+
+  const SortIndicator = ({ k }: { k: SortKey }) => {
+    if (sortKey !== k) return null;
+    return sortDir === 'asc' ? (
+      <ArrowUp className="w-3 h-3 inline ml-1" />
+    ) : (
+      <ArrowDown className="w-3 h-3 inline ml-1" />
+    );
+  };
 
   return (
     <div className="flex flex-col w-full gap-4">
@@ -129,11 +164,17 @@ export function CatalogView({
             className="appearance-none bg-slate-950 border border-slate-800 hover:border-slate-700 text-[11px] sm:text-xs text-slate-200 font-friz py-2 pl-2.5 sm:pl-3 pr-7 sm:pr-8 rounded-lg focus:outline-none focus:ring-1 focus:ring-amber-500/50 cursor-pointer max-w-[140px] sm:max-w-[200px] truncate"
             title="Select server/realm"
           >
-            {realmOptions.map((r) => (
-              <option key={r.id} value={r.id}>
-                {r.name}
+            {realmOptions.length === 0 ? (
+              <option value="" disabled>
+                Loading realms…
               </option>
-            ))}
+            ) : (
+              realmOptions.map((r) => (
+                <option key={r.id} value={r.id}>
+                  {r.name}
+                </option>
+              ))
+            )}
           </select>
           <ChevronDown className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-slate-400 absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none" />
         </div>
@@ -507,8 +548,7 @@ export function CatalogView({
           ) : (
             <>
               <div className="block sm:hidden divide-y divide-slate-800/80">
-                {processedItems.map((item) => {
-                  const isPos = item.priceDelta24h >= 0;
+                {sortedItems.map((item) => {
                   return (
                     <div
                       key={`mob-${item.itemId}`}
@@ -519,23 +559,8 @@ export function CatalogView({
                           : 'hover:bg-slate-800/40 active:bg-slate-800/60'
                       }`}
                     >
-                      <div className="flex items-start justify-between gap-2.5">
-                        <div className="flex items-center gap-2 min-w-0">
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              onToggleFavorite(item.itemId);
-                            }}
-                            className="p-1.5 text-amber-400 hover:text-amber-300 transition-colors flex-shrink-0 cursor-pointer"
-                            title={favorites.includes(item.itemId) ? 'Remove from favorites' : 'Add to favorites'}
-                          >
-                            <Star
-                              className={`w-4.5 h-4.5 ${
-                                favorites.includes(item.itemId) ? 'fill-amber-400 text-amber-400' : 'text-slate-600'
-                              }`}
-                            />
-                          </button>
-
+                      <div className="flex items-start gap-2.5">
+                        <div className="flex items-center gap-2 min-w-0 flex-1">
                           <div
                             className={`w-10 h-10 rounded-lg overflow-hidden border-2 flex-shrink-0 relative ${getQualityBorderColor(
                               item.meta.quality
@@ -559,46 +584,37 @@ export function CatalogView({
                           </div>
                           <div className="min-w-0">
                             <div
-                              className={`font-friz font-bold text-[13.5px] truncate ${getQualityColor(
+                              className={`font-narrow text-[17.8px] truncate ${getQualityColor(
                                 item.meta.quality
                               )}`}
                             >
                               {item.meta.name}
                             </div>
-                            <div className="text-[11.2px] text-slate-400 font-narrow">
+                            <div className="text-[14.5px] text-slate-400 font-narrow">
                               {item.meta.subclass} · iLvl {item.meta.itemLevel}
                             </div>
                           </div>
                         </div>
 
-                        <span
-                          className={`inline-flex items-center gap-0.5 text-[13.2px] font-narrow font-bold flex-shrink-0 ${
-                            isPos ? 'text-emerald-400' : 'text-rose-400'
-                          }`}
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onToggleFavorite(item.itemId);
+                          }}
+                          className="p-1.5 text-amber-400 hover:text-amber-300 transition-colors flex-shrink-0 cursor-pointer"
+                          title={favorites.includes(item.itemId) ? 'Remove from favorites' : 'Add to favorites'}
                         >
-                          {isPos ? <TrendingUp className="w-3.5 h-3.5" /> : <TrendingDown className="w-3.5 h-3.5" />}
-                          <span>
-                            {isPos ? '+' : ''}
-                            {item.priceDelta24h.toFixed(1)}%
-                          </span>
-                        </span>
+                          <Star
+                            className={`w-[18px] h-[18px] ${
+                              favorites.includes(item.itemId) ? 'fill-amber-400 text-amber-400' : 'text-slate-600'
+                            }`}
+                          />
+                        </button>
                       </div>
 
-                      <div className="mt-2.5 pt-2 border-t border-slate-800/60 grid grid-cols-3 gap-1 text-[12.2px] font-narrow">
-                        <div>
-                          <div className="text-[11px] text-slate-500 uppercase tracking-tight font-friz">Min Buyout</div>
-                          <WoWMoney copper={item.minPrice} size="xs" className="text-[13.2px]" />
-                        </div>
-                        <div>
-                          <div className="text-[11px] text-slate-500 uppercase tracking-tight font-friz">Median</div>
-                          <WoWMoney copper={item.medianPrice} size="xs" className="text-[13.2px]" />
-                        </div>
-                        <div className="text-right">
-                          <div className="text-[11px] text-slate-500 uppercase tracking-tight font-friz">Volume</div>
-                          <span className="font-narrow font-bold text-slate-200 text-[13.2px]">
-                            {item.quantity.toLocaleString()}
-                          </span>
-                        </div>
+                      <div className="mt-2.5 pt-2 border-t border-slate-800/60">
+                        <div className="text-[14.5px] text-slate-500 uppercase tracking-tight font-friz">Min Buyout</div>
+                        <WoWMoney copper={item.minPrice} size="xl" />
                       </div>
                     </div>
                   );
@@ -606,20 +622,34 @@ export function CatalogView({
               </div>
 
               <div className="hidden sm:block overflow-x-auto">
-                <table className="w-full text-sm font-narrow">
+                <table className="w-full text-base font-narrow border-collapse">
                   <thead>
-                    <tr className="text-left text-[11px] uppercase tracking-wider text-slate-400 bg-slate-950/80 border-b border-slate-800">
-                      <th className="py-2.5 pl-3 font-friz font-bold w-10"></th>
-                      <th className="py-2.5 font-friz font-bold">Item</th>
-                      <th className="py-2.5 font-friz font-bold text-right">Min Buyout</th>
-                      <th className="py-2.5 font-friz font-bold text-right hidden md:table-cell">Median</th>
-                      <th className="py-2.5 font-friz font-bold text-right hidden lg:table-cell">Volume</th>
-                      <th className="py-2.5 pr-3 font-friz font-bold text-right">24h</th>
+                    <tr className="text-left text-[13.2px] uppercase tracking-wider text-slate-400 bg-slate-950/80 border-b border-slate-800">
+                      <th className="py-2.5 pl-3 pr-6 font-friz font-bold text-right">
+                        <button
+                          onClick={() => toggleSort('minPrice')}
+                          className="inline-flex items-center cursor-pointer hover:text-slate-200 transition-colors"
+                          title="Sort by Min Buyout"
+                        >
+                          Min Buyout
+                          <SortIndicator k="minPrice" />
+                        </button>
+                      </th>
+                      <th className="py-2.5 pr-3 font-friz font-bold">
+                        <button
+                          onClick={() => toggleSort('name')}
+                          className="inline-flex items-center cursor-pointer hover:text-slate-200 transition-colors"
+                          title="Sort by Item name"
+                        >
+                          Item
+                          <SortIndicator k="name" />
+                        </button>
+                      </th>
+                      <th className="py-2.5 pr-3 font-friz font-bold w-14 text-right"></th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-800/80">
-                    {processedItems.map((item) => {
-                      const isPos = item.priceDelta24h >= 0;
+                    {sortedItems.map((item) => {
                       return (
                         <tr
                           key={`dsk-${item.itemId}`}
@@ -630,26 +660,13 @@ export function CatalogView({
                               : 'hover:bg-slate-800/40'
                           }`}
                         >
-                          <td className="py-2 pl-3 align-middle">
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                onToggleFavorite(item.itemId);
-                              }}
-                              className="p-1 text-amber-400 hover:text-amber-300 transition-colors cursor-pointer"
-                              title={favorites.includes(item.itemId) ? 'Remove from favorites' : 'Add to favorites'}
-                            >
-                              <Star
-                                className={`w-4 h-4 ${
-                                  favorites.includes(item.itemId) ? 'fill-amber-400 text-amber-400' : 'text-slate-600'
-                                }`}
-                              />
-                            </button>
+                          <td className="py-2 pl-3 pr-6 align-middle text-right">
+                            <WoWMoney copper={item.minPrice} size="xl" className="text-slate-100" />
                           </td>
-                          <td className="py-2 align-middle">
+                          <td className="py-2 pr-3 align-middle">
                             <div className="flex items-center gap-2.5 min-w-0">
                               <div
-                                className={`w-9 h-9 rounded-md overflow-hidden border-2 flex-shrink-0 relative ${getQualityBorderColor(
+                                className={`w-10 h-10 rounded-md overflow-hidden border-2 flex-shrink-0 relative ${getQualityBorderColor(
                                   item.meta.quality
                                 )}`}
                               >
@@ -665,45 +682,39 @@ export function CatalogView({
                                 />
                                 {loadingItemId === item.itemId && (
                                   <div className="absolute inset-0 bg-black/60 flex items-center justify-center">
-                                    <RefreshCw className="w-3.5 h-3.5 text-amber-400 animate-spin" />
+                                    <RefreshCw className="w-4 h-4 text-amber-400 animate-spin" />
                                   </div>
                                 )}
                               </div>
                               <div className="min-w-0">
                                 <div
-                                  className={`font-friz font-bold text-[13.5px] truncate ${getQualityColor(
+                                  className={`font-narrow text-[17.8px] truncate ${getQualityColor(
                                     item.meta.quality
                                   )}`}
                                 >
                                   {item.meta.name}
                                 </div>
-                                <div className="text-[11px] text-slate-400 truncate">
+                                <div className="text-[14.5px] text-slate-400 font-narrow truncate">
                                   {item.meta.subclass} · iLvl {item.meta.itemLevel}
                                 </div>
                               </div>
                             </div>
                           </td>
-                          <td className="py-2 align-middle text-right">
-                            <WoWMoney copper={item.minPrice} size="xs" className="text-[13.5px] font-bold text-slate-100" />
-                          </td>
-                          <td className="py-2 align-middle text-right hidden md:table-cell">
-                            <WoWMoney copper={item.medianPrice} size="xs" className="text-[13.5px] text-slate-300" />
-                          </td>
-                          <td className="py-2 align-middle text-right hidden lg:table-cell font-narrow font-bold text-slate-200 text-[13.5px]">
-                            {item.quantity.toLocaleString()}
-                          </td>
                           <td className="py-2 pr-3 align-middle text-right">
-                            <span
-                              className={`inline-flex items-center gap-0.5 text-[13.2px] font-narrow font-bold ${
-                                isPos ? 'text-emerald-400' : 'text-rose-400'
-                              }`}
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onToggleFavorite(item.itemId);
+                              }}
+                              className="p-1 text-amber-400 hover:text-amber-300 transition-colors cursor-pointer"
+                              title={favorites.includes(item.itemId) ? 'Remove from favorites' : 'Add to favorites'}
                             >
-                              {isPos ? <TrendingUp className="w-3.5 h-3.5" /> : <TrendingDown className="w-3.5 h-3.5" />}
-                              <span>
-                                {isPos ? '+' : ''}
-                                {item.priceDelta24h.toFixed(1)}%
-                              </span>
-                            </span>
+                              <Star
+                                className={`w-[18px] h-[18px] ${
+                                  favorites.includes(item.itemId) ? 'fill-amber-400 text-amber-400' : 'text-slate-600'
+                                }`}
+                              />
+                            </button>
                           </td>
                         </tr>
                       );

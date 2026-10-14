@@ -50,7 +50,8 @@ export const parseRealmId = (raw: string | undefined): number | null =>
 export const parseItemId = (raw: string | undefined): number | null =>
   parseBoundedInt(raw, MAX_ITEM_ID);
 
-/** Default realm used when a caller omits one. Mirrors CONNECTED_REALMS[0]. */
+/** Default realm used when a caller omits one. (Was Silvermoon historically;
+ *  no longer tied to any hardcoded list — see /api/realms for live IDs.) */
 export const DEFAULT_REALM_ID = 1305;
 
 /**

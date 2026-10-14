@@ -1,8 +1,8 @@
 'use client';
 
 import { useState } from 'react';
-import { type DecodedItemBin, TIME_LEFT_LABELS } from '../types/auction';
-import { getItemMetadata, getQualityColor, getQualityBorderColor, CONNECTED_REALMS } from '../data/itemsCatalog';
+import { type DecodedItemBin, type WowItemMetadata, TIME_LEFT_LABELS } from '../types/auction';
+import { getItemMetadata, getQualityColor, getQualityBorderColor } from '../data/itemsCatalog';
 import { WoWMoney } from './WoWMoney';
 import { AuctionChart } from './AuctionChart';
 import { HourlyHeatMaps } from './HourlyHeatMaps';
@@ -31,6 +31,7 @@ interface ItemDetailModalProps {
   isFavorited?: boolean;
   onToggleFavorite?: () => void;
   onSelectRealm?: (realmId: number) => void;
+  meta?: WowItemMetadata;
 }
 
 export function ItemDetailModal({
@@ -41,14 +42,16 @@ export function ItemDetailModal({
   isFavorited = false,
   onToggleFavorite,
   onSelectRealm,
+  meta: metaProp,
 }: ItemDetailModalProps) {
-  const meta = getItemMetadata(itemData.itemId);
+  const meta = metaProp ?? getItemMetadata(itemData.itemId);
   // Default to heatmaps so the 2 hourly heat maps are immediately displayed upon clicking an item!
   const [activeTab, setActiveTab] = useState<'heatmaps' | 'chart' | 'lots' | 'all'>('heatmaps');
 
   const resolvedRealmName =
     realmName ||
-    CONNECTED_REALMS.find((r) => r.id === itemData.connectedRealmId)?.name ||
+    // Caller passes `realmName` from page.tsx (already resolved via
+    // /api/realms). Fall back to a generic label when missing.
     'Connected Realm';
 
   const priceDeltaPositive = itemData.priceDelta24h >= 0;

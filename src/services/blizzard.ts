@@ -161,8 +161,16 @@ export class BlizzardService {
         signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
       });
       if (!response.ok) return null;
-      const data = (await response.json()) as { name?: string };
-      return typeof data.name === 'string' ? data.name : null;
+      const data = (await response.json()) as { realms?: Array<{ name?: string }> };
+      // Connected-realm responses don't have a top-level `name`; the
+      // human-readable label is on the first character realm inside `realms`.
+      // Multi-realm CRs are joined with "/" so the dropdown shows both
+      // labels (e.g. "Khadgar / Bloodhoof").
+      const names = (data.realms ?? [])
+        .map((r) => (typeof r.name === 'string' ? r.name : null))
+        .filter((n): n is string => n !== null);
+      if (names.length === 0) return null;
+      return names.join(' / ');
     } catch {
       return null;
     }

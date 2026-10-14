@@ -55,13 +55,24 @@ export async function GET(req: NextRequest) {
       const cacheKey = `${product}:${region}:${id}`;
       let name = NAME_CACHE.get(cacheKey);
       if (!name) {
+        let live: string | null = null;
         try {
-          const live = await blizzard.fetchConnectedRealmName(id);
-          name = live ?? `#${id}`;
+          live = await blizzard.fetchConnectedRealmName(id);
         } catch {
+          live = null;
+        }
+        if (live) {
+          name = live;
+          // Only memoize successful Blizzard lookups so transient outages
+          // or auth hiccups retry on the next request instead of pinning
+          // a stale fallback until the process restarts.
+          NAME_CACHE.set(cacheKey, name);
+        } else {
+          // No hardcoded fallback — we want real names only. Until the
+          // next /api/realms call retries Blizzard, the id placeholder is
+          // honest about being unresolved.
           name = `#${id}`;
         }
-        NAME_CACHE.set(cacheKey, name);
       }
       const meta = await r2.getBinMetadata(`data/cached/${product}/${region}/${id}/state.bin`);
       realms.push({

@@ -8,7 +8,6 @@ import {
 } from '@/src/types/auction';
 import { BinaryDecoder } from '@/src/utils/binDecoder';
 import {
-  CONNECTED_REALMS,
   getItemMetadata,
   getQualityColor,
   getQualityBorderColor,
@@ -16,7 +15,6 @@ import {
 import { WoWMoney } from '@/src/components/WoWMoney';
 import { ItemDetailModal } from '@/src/components/ItemDetailModal';
 import { BinaryInspectorModal } from '@/src/components/BinaryInspectorModal';
-import { PipelineRunnerModal } from '@/src/components/PipelineRunnerModal';
 import {
   RefreshCw,
   TrendingUp,
@@ -157,13 +155,37 @@ export default function WowForeverAhDashboard() {
   const [loadingItemId, setLoadingItemId] = useState<number | null>(null);
   const [selectionError, setSelectionError] = useState<{ itemId: number; message: string } | null>(null);
   const [showBinaryInspector, setShowBinaryInspector] = useState<boolean>(false);
-  const [showPipelineModal, setShowPipelineModal] = useState<boolean>(false);
-  const [showArchDocs, setShowArchDocs] = useState<boolean>(false);
 
-  // Region — kept so the state.bin URL stays region-aware. The dashboard
-  // itself uses CONNECTED_REALMS for the realm dropdown (CatalogView) and
-  // has no other realm picker.
+  // Region — kept so the state.bin URL stays region-aware. The realm
+  // dropdown (CatalogView) enumerates from /api/realms and there's no
+  // separate realm picker here.
   const [region] = useState<'eu' | 'us'>('eu');
+
+  // Live realm id → name map. Populated from /api/realms so the dashboard
+  // header, modal, and flipping comparisons show real Blizzard-resolved
+  // labels (Khadgar, Dentarg, Kazzak, …) instead of hardcoded values.
+  const [realmNames, setRealmNames] = useState<Record<number, string>>({});
+  useEffect(() => {
+    let ignore = false;
+    (async () => {
+      try {
+        const res = await fetch(`/api/realms?product=retail&region=${region}`, {
+          cache: 'no-store',
+        });
+        if (!res.ok) return;
+        const json = (await res.json()) as { realms: Array<{ id: number; name: string }> };
+        if (ignore) return;
+        const map: Record<number, string> = {};
+        for (const r of json.realms ?? []) map[r.id] = r.name;
+        setRealmNames(map);
+      } catch {
+        // silent — names fall back to `#${id}` until next refetch.
+      }
+    })();
+    return () => {
+      ignore = true;
+    };
+  }, [region]);
 
   // Load state.bin from static cache/API. Refresh by changing realm
   // or by bumping refreshTick (used after pipeline ingestion).
@@ -208,19 +230,29 @@ export default function WowForeverAhDashboard() {
     setIsLoadingAllRealms(true);
     const updatedStates: Record<number, DecodedStateBin> = {};
     try {
+      // Enumerate realms live — same source CatalogView uses. As new
+      // R2 folders appear, they show up here too.
+      const listRes = await fetch(`/api/realms?product=retail&region=${region}`, {
+        cache: 'no-store',
+      });
+      const listJson = listRes.ok
+        ? ((await listRes.json()) as { realms: Array<{ id: number }> })
+        : { realms: [] };
+      const realmIds = listJson.realms.map((r) => r.id);
+
       await Promise.all(
-        CONNECTED_REALMS.map(async (realm) => {
+        realmIds.map(async (realmId) => {
           try {
-            const res = await fetch(`/api/data/cached/retail/${region}/${realm.id}/state.bin`, {
+            const res = await fetch(`/api/data/cached/retail/${region}/${realmId}/state.bin`, {
               cache: 'no-store',
             });
             if (res.ok) {
               const buffer = await res.arrayBuffer();
               const decoded = BinaryDecoder.decodeState(buffer);
-              updatedStates[realm.id] = decoded;
+              updatedStates[realmId] = decoded;
             }
           } catch (e) {
-            console.error(`Failed to load realm ${realm.id}`, e);
+            console.error(`Failed to load realm ${realmId}`, e);
           }
         })
       );
@@ -275,7 +307,7 @@ export default function WowForeverAhDashboard() {
         setSelectedRealmId(targetRealmId);
       }
       const shard = itemId & 0xff;
-      const res = await fetch(`/api/data/cached/${realmToLoad}/${shard}/${itemId}.bin`, {
+      const res = await fetch(`/api/data/cached/retail/${region}/${realmToLoad}/${shard}/${itemId}.bin`, {
         cache: 'no-store',
         signal: controller.signal,
       });
@@ -470,10 +502,11 @@ export default function WowForeverAhDashboard() {
   }, []);
 
   interface RealmView { id: number; lastUpdated: string | null; name: string }
-const currentRealm: RealmView =
-  (CONNECTED_REALMS.find((r) => r.id === selectedRealmId) as unknown as RealmView | undefined) ??
-  (CONNECTED_REALMS[0] as unknown as RealmView | undefined) ??
-  { id: selectedRealmId, lastUpdated: null, name: `#${selectedRealmId}` };
+const currentRealm: RealmView = {
+  id: selectedRealmId,
+  lastUpdated: null,
+  name: realmNames[selectedRealmId] ?? `#${selectedRealmId}`,
+};
 
   const flippingOpportunities = useMemo<FlippingOpportunity[]>(() => {
     const list: FlippingOpportunity[] = [];
@@ -558,8 +591,8 @@ const currentRealm: RealmView =
 
           if (netProfit >= minProfitCopper) {
             const roi = bestBuyPrice > 0 ? (netProfit / bestBuyPrice) * 100 : 0;
-            const buyRealmName = CONNECTED_REALMS.find((r) => r.id === bestBuyRealmId)?.name || 'Realm';
-            const sellRealmName = CONNECTED_REALMS.find((r) => r.id === bestSellRealmId)?.name || 'Realm';
+            const buyRealmName = realmNames[bestBuyRealmId] || 'Realm';
+            const sellRealmName = realmNames[bestSellRealmId] || 'Realm';
 
             list.push({
               itemId,
@@ -590,9 +623,6 @@ const currentRealm: RealmView =
         viewMode={viewMode}
         setViewMode={setViewMode}
         favoritesCount={isMounted ? favorites.length : 0}
-        showArchDocs={showArchDocs}
-        setShowArchDocs={setShowArchDocs}
-        setShowPipelineModal={setShowPipelineModal}
               />
         {/* Main Container */}
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 py-6 space-y-6">
@@ -719,29 +749,18 @@ const currentRealm: RealmView =
 
       {/* Footer */}
       <footer className="border-t border-slate-800/80 bg-slate-950 py-5 sm:py-6 px-4 text-center text-xs text-slate-500">
-        <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-3">
-          <div className="flex items-center gap-2">
-            <span className="font-semibold text-slate-300">WoW Forever AH</span>
-            <span>·</span>
-            <span>Live Binary Auction Intelligence</span>
-          </div>
-          <div className="flex items-center gap-4 flex-wrap justify-center sm:justify-end">
-            <button
-              onClick={() => {
-                setFeedbackSubmitted(false);
-                setShowFeedbackModal(true);
-              }}
-              className="px-3.5 py-1.5 text-xs font-semibold rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white shadow-md hover:scale-105 active:scale-95 transition-all cursor-pointer flex items-center gap-1.5"
-            >
-              <span>💬</span>
-              <span>Send Feedback</span>
-            </button>
-            <div className="flex items-center gap-3 font-mono text-[11px] text-slate-500">
-              <span>Encoding: LITTLE_ENDIAN UNDR-v1</span>
-              <span>·</span>
-              <span>Storage: Cloudflare R2</span>
-            </div>
-          </div>
+        <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-center gap-3">
+          <span className="font-semibold text-slate-300">WoW Forever AH</span>
+          <button
+            onClick={() => {
+              setFeedbackSubmitted(false);
+              setShowFeedbackModal(true);
+            }}
+            className="px-3.5 py-1.5 text-xs font-semibold rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white shadow-md hover:scale-105 active:scale-95 transition-all cursor-pointer flex items-center gap-1.5"
+          >
+            <span>💬</span>
+            <span>Send Feedback</span>
+          </button>
         </div>
       </footer>
 
@@ -796,6 +815,7 @@ const currentRealm: RealmView =
       {selectedItemBin && (
         <ItemDetailModal
           itemData={selectedItemBin}
+          meta={getMeta(selectedItemBin.itemId)}
           realmName={currentRealm.name}
           onClose={() => setSelectedItemBin(null)}
           onOpenBinaryInspector={() => setShowBinaryInspector(true)}
@@ -813,17 +833,6 @@ const currentRealm: RealmView =
           itemData={selectedItemBin}
           rawBuffer={rawItemBuffer}
           onClose={() => setShowBinaryInspector(false)}
-        />
-      )}
-
-      {/* Pipeline Ingestion Modal */}
-      {showPipelineModal && (
-        <PipelineRunnerModal
-          currentRealmId={selectedRealmId}
-          onClose={() => setShowPipelineModal(false)}
-          onPipelineComplete={() => {
-            void setRefreshTick((t) => t + 1);
-          }}
         />
       )}
 
