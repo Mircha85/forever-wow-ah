@@ -21,3 +21,6 @@ npm-debug.log*
 docs/de-rezolvat.md
 docs/secret-rotation.md
 src/utils/__tests__/apiGuard.test.ts
+
+# Isolated worktrees (see docs/superpowers/plans/*)
+.worktrees/
