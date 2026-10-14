@@ -24,3 +24,8 @@ src/utils/__tests__/apiGuard.test.ts
 
 # Isolated worktrees (see docs/superpowers/plans/*)
 .worktrees/
+
+# Migration scratch inventory (Task 1 of 2026-10-14-vercel-hobby-migration.md)
+docs/superpowers/plans/2026-10-14-migration-inventory.md
+docs/superpowers/plans/cron-jobs-seed.json
+docs/superpowers/plans/cron-jobs.generated.json

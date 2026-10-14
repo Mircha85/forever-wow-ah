@@ -187,6 +187,10 @@ command.
 
 ## Deploying
 
-Any host that runs Next.js on Node >= 20.9 works. The code was scaffolded for
-Google AI Studio and targets Cloud Run; nothing in the app is Cloud-Run-specific
-beyond the `APP_URL` variable used for self-referential links.
+The app runs anywhere Next.js 15 on Node >= 20.9 runs. Production deploy is on
+**Vercel Hobby** (`fra1` region). Extraction is triggered by
+[cron-job.org](https://cron-job.org/) hitting `POST /api/pipeline/run` every
+30 minutes per connected realm. No Cloud Run, no egress bills.
+
+Set the env vars documented in `.env.example`. The Cloudflare R2 credentials
+are required for any non-toy deployment.
