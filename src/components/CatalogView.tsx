@@ -35,6 +35,25 @@ interface CategoryCount {
   [categoryId: string]: number;
 }
 
+type SortKey = 'minPrice' | 'name';
+
+function SortIndicator({
+  k,
+  activeKey,
+  dir,
+}: {
+  k: SortKey;
+  activeKey: SortKey;
+  dir: 'asc' | 'desc';
+}) {
+  if (activeKey !== k) return null;
+  return dir === 'asc' ? (
+    <ArrowUp className="w-3 h-3 inline ml-1" />
+  ) : (
+    <ArrowDown className="w-3 h-3 inline ml-1" />
+  );
+}
+
 interface CatalogViewProps {
   _totalItemCount: number;
   categoryCounts: CategoryCount;
@@ -95,7 +114,7 @@ export function CatalogView({
   const [liveRealms, setLiveRealms] = useState<LiveRealm[]>([]);
   useEffect(() => {
     let ignore = false;
-    (async () => {
+    void (async () => {
       try {
         const res = await fetch('/api/realms?product=retail&region=eu', { cache: 'no-store' });
         if (!res.ok) return;
@@ -118,7 +137,6 @@ export function CatalogView({
 
   // Sort state. Click a header to set it as the sort key; click again to
   // flip asc/desc. Star column stays non-sortable.
-  type SortKey = 'minPrice' | 'name';
   const [sortKey, setSortKey] = useState<SortKey>('minPrice');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
 
@@ -141,15 +159,6 @@ export function CatalogView({
       setSortKey(key);
       setSortDir('asc');
     }
-  };
-
-  const SortIndicator = ({ k }: { k: SortKey }) => {
-    if (sortKey !== k) return null;
-    return sortDir === 'asc' ? (
-      <ArrowUp className="w-3 h-3 inline ml-1" />
-    ) : (
-      <ArrowDown className="w-3 h-3 inline ml-1" />
-    );
   };
 
   return (
@@ -632,7 +641,7 @@ export function CatalogView({
                           title="Sort by Min Buyout"
                         >
                           Min Buyout
-                          <SortIndicator k="minPrice" />
+                          <SortIndicator k="minPrice" activeKey={sortKey} dir={sortDir} />
                         </button>
                       </th>
                       <th className="py-2.5 pr-3 font-friz font-bold">
@@ -642,7 +651,7 @@ export function CatalogView({
                           title="Sort by Item name"
                         >
                           Item
-                          <SortIndicator k="name" />
+                          <SortIndicator k="name" activeKey={sortKey} dir={sortDir} />
                         </button>
                       </th>
                       <th className="py-2.5 pr-3 font-friz font-bold w-14 text-right"></th>

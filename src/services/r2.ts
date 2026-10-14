@@ -239,7 +239,8 @@ export class R2Service {
    */
   public async getBinMetadata(key: string): Promise<R2ObjectMetadata | null> {
     if (R2Service.localMemoryCache.has(key)) {
-      const m = R2Service.localMemoryCache.get(key)!;
+      const m = R2Service.localMemoryCache.get(key);
+      if (!m) return null;
       return { size: m.buffer.length, lastModified: m.lastModified, etag: m.eTag };
     }
 

@@ -85,7 +85,8 @@ export function HourlyHeatMaps({
         });
       }
 
-      daysMap.get(dateKey)!.hours.set(hour, d);
+      const entry = daysMap.get(dateKey);
+      if (entry) entry.hours.set(hour, d);
     }
 
     // Convert to sorted rows (take up to 8 recent days)

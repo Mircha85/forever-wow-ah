@@ -167,7 +167,7 @@ export default function WowForeverAhDashboard() {
   const [realmNames, setRealmNames] = useState<Record<number, string>>({});
   useEffect(() => {
     let ignore = false;
-    (async () => {
+    void (async () => {
       try {
         const res = await fetch(`/api/realms?product=retail&region=${region}`, {
           cache: 'no-store',
@@ -224,6 +224,9 @@ export default function WowForeverAhDashboard() {
     return () => {
       ignore = true;
     };
+    // region is read inside `execute` but intentionally excluded: state.bin is
+    // keyed by selectedRealmId and we already refetch when refreshTick bumps.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedRealmId, refreshTick]);
 
   const loadAllRealmsStates = React.useCallback(async () => {
@@ -399,6 +402,8 @@ export default function WowForeverAhDashboard() {
     // browser tab rendering every row at once. Sort and filter have already
     // produced the canonical list; the cap is the last step.
     return list.slice(0, 500);
+    // getMeta identity is captured via metaMap; adding it directly double-fires.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [stateData, searchQuery, selectedCategory, selectedSubcategory, selectedChildSubcategory, sortBy, metaMap, hasSearched]);
 
   // Dynamic category item count badges
@@ -414,6 +419,7 @@ export default function WowForeverAhDashboard() {
       }
     }
     return counts;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [stateData, metaMap]);
 
   // Favorite items (sorted by price ascending as indicated by "Price ⬆" in screenshot)
@@ -426,6 +432,7 @@ export default function WowForeverAhDashboard() {
         meta: getMeta(it.itemId),
       }))
       .sort((a, b) => a.minPrice - b.minPrice);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [stateData, favorites, metaMap]);
 
   // Top Gainers & Movers
@@ -438,6 +445,7 @@ export default function WowForeverAhDashboard() {
         ...it,
         meta: getMeta(it.itemId),
       }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [stateData, metaMap]);
 
   // Crafting helpers
@@ -615,6 +623,8 @@ const currentRealm: RealmView = {
     }
 
     return list.sort((a, b) => b.netProfit - a.netProfit);
+    // getMeta identity captured via metaMap; realmNames snapshotted via currentRealm.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [stateData, allRealmsStates, minFlippingProfit, selectedRealmId, currentRealm, metaMap]);
 
   return (
