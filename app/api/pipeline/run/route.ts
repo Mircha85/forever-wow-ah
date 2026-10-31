@@ -2,6 +2,7 @@ import { type NextRequest, NextResponse } from 'next/server';
 import { BlizzardService } from '@/src/services/blizzard';
 import { R2Service } from '@/src/services/r2';
 import { AuctionAggregator } from '@/src/services/aggregator';
+import { warmMetadataForIds } from '@/src/services/itemMetadataCache';
 import {
   badRequest,
   enforceRateLimit,
@@ -39,6 +40,16 @@ import {
 /** One full run per 5 s, burst of 5. A human clicking "Run pipeline" is fine. */
 const LIMIT = 5;
 const WINDOW_MS = 5_000;
+
+/**
+ * Cap the items warmed inline at the end of every successful run. The
+ * cache is shared (in-memory) across realms and survives across runs, so
+ * the first run for a realm pays the full cost and every subsequent run
+ * is essentially free. ~100 items × concurrency 5 ≈ 3 s extra on a cold
+ * cache, which keeps the manual "Run pipeline" button snappy and stays
+ * inside the Vercel Hobby 120 s budget.
+ */
+const WARM_CAP = 100;
 
 export async function POST(req: NextRequest) {
   const unauthorized = requireBearer(req);
@@ -90,6 +101,30 @@ export async function POST(req: NextRequest) {
       r2
     );
 
+    // Inline metadata warming so the cron-driven cache stays warm without
+    // needing a separate bearer call. Best-effort: a Blizzard outage on
+    // this step must not break the pipeline response, which already
+    // delivered the far more valuable state.bin to R2.
+    //
+    // The public `GET /api/items-meta` route is cache-only — see that
+    // file's header for the auth split that made this necessary.
+    let warm: Awaited<ReturnType<typeof warmMetadataForIds>> | null = null;
+    let warmIds: number[] = [];
+    if (blizzard.hasCredentials() && result.itemsProcessed.length > 0) {
+      warmIds = result.itemsProcessed.slice(0, WARM_CAP);
+      try {
+        warm = await warmMetadataForIds(
+          (id) => blizzard.fetchItemMetadata(id),
+          warmIds
+        );
+      } catch (err) {
+        console.error(
+          `[API] pipeline/run: inline metadata warm failed for realm ${connectedRealmId}:`,
+          err instanceof Error ? err.message : String(err)
+        );
+      }
+    }
+
     return NextResponse.json({
       success: true,
       // Surfaced so the UI can say plainly whether it is showing live or
@@ -100,6 +135,11 @@ export async function POST(req: NextRequest) {
         ...result,
         source: r2.hasCloudflareR2() ? 'Cloudflare R2 Bucket' : 'Fast Local/Memory Cache',
       },
+      // Informational — `{ warmedIds, fetched, skipped, failed, retriedOut }`
+      // when warming ran; null when it didn't (no creds / empty snapshot).
+      warm: warm
+        ? { warmedIds: warmIds.length, ...warm }
+        : null,
     });
   } catch (err: unknown) {
     return upstreamError(err, 'pipeline/run');

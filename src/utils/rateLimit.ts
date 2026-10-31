@@ -101,18 +101,57 @@ export function checkRateLimit(
 /**
  * Best-effort client identity for rate limiting.
  *
- * Cloud Run and every reverse proxy in front of it set `x-forwarded-for`.
- * The left-most entry is the original client. The header is trivially
- * spoofable, so this throttles *accidents* rather than a determined attacker —
- * which is the correct expectation for an in-memory limiter.
+ * Trust order, from most to least trustworthy:
  *
- * `Vercel`/`Cloudflare` style `x-real-ip` is used as a fallback.
+ *  1. `x-vercel-forwarded-for` — set by Vercel's edge from the TCP source
+ *     IP. Cannot be spoofed by a client-supplied header because Vercel
+ *     overwrites it on the way in. Always present on Vercel Hobby.
+ *  2. `cf-connecting-ip` — Cloudflare's edge equivalent, also set from
+ *     TCP. Use this if the app is fronted by Cloudflare directly.
+ *  3. `fly-client-ip` — Fly.io proxy's edge equivalent.
+ *  4. `x-real-ip` — what `nginx`, Caddy, and most reverse proxies set to
+ *     the client IP when they don't speak Vercel/CF/Fly. Trustworthy only
+ *     if the operator controls the proxy.
+ *  5. `x-forwarded-for` — last resort. The leftmost entry is client-
+ *     controlled and trivially spoofable; without knowing how many
+ *     trusted proxies are in the chain, we cannot pick safely. Kept only
+ *     as a fallback for self-hosted setups that set nothing else.
+ *
+ * Callers that get nothing fall into the shared `"unknown"` bucket. This
+ * is a deliberate DoS-hardening choice: the alternative is handing an
+ * attacker a per-request bucket by letting them send a fresh XFF per call.
+ * The in-memory limiter is documented as accident mitigation, not abuse
+ * prevention.
+ *
+ * Header values that contain a comma-separated chain (some platforms
+ * defensively append their own IP) are split and the first entry is used.
  */
+const TRUSTED_IP_HEADERS = [
+  'x-vercel-forwarded-for',
+  'cf-connecting-ip',
+  'fly-client-ip',
+  'x-real-ip',
+] as const;
+
+function firstEntry(value: string): string | null {
+  const first = value.split(',')[0]?.trim();
+  return first ? first : null;
+}
+
 export function clientKeyFromHeaders(headers: Headers): string {
+  for (const name of TRUSTED_IP_HEADERS) {
+    const value = headers.get(name);
+    if (value) {
+      const first = firstEntry(value);
+      if (first) return first;
+    }
+  }
+
   const forwarded = headers.get('x-forwarded-for');
   if (forwarded) {
-    const first = forwarded.split(',')[0]?.trim();
+    const first = firstEntry(forwarded);
     if (first) return first;
   }
-  return headers.get('x-real-ip') ?? 'unknown';
+
+  return 'unknown';
 }

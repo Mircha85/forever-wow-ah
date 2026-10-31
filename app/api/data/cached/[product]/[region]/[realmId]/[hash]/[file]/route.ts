@@ -1,6 +1,5 @@
 import { type NextRequest, NextResponse } from 'next/server';
 import { R2Service } from '@/src/services/r2';
-import { BlizzardService } from '@/src/services/blizzard';
 import { AuctionAggregator } from '@/src/services/aggregator';
 import {
   badRequest,
@@ -61,34 +60,28 @@ export async function GET(
 
     let buffer = await r2.getBin(itemKey);
 
-    if (!buffer) {
-      try {
-        const blizzard = new BlizzardService({
-          region,
-          namespace: product === 'forever' ? `dynamic-classicann-${region}` : `dynamic-${region}`,
-        });
-        const { snapshot } = await blizzard.fetchAuctionSnapshot(parsedRealmId);
-        await AuctionAggregator.processSnapshot(
-          product as Product,
-          region,
-          parsedRealmId,
-          snapshot,
-          r2
-        );
-        buffer = await r2.getBin(itemKey);
-      } catch (e) {
-        console.warn(`[API] Snapshot processing fallback for item #${itemId}:`, e);
-      }
-    }
-
+    // Cache-miss policy: go straight to the synthetic single-item bin.
+    //
+    // We deliberately do NOT rebuild the full realm snapshot here. The
+    // previous version called `fetchAuctionSnapshot` + `processSnapshot`
+    // on every miss, which:
+    //   - burns a Battle.net quota slot (10-25 MB JSON) per miss
+    //   - rewrites state.bin + thousands of item.bin files when only one
+    //     was requested
+    //   - is trivially exploitable: 200 different miss IDs => 200 full
+    //     snapshot rebuilds
+    //   - blows past the Vercel Hobby memory ceiling on a 15k-item realm
+    //
+    // Real data is populated via the bearer-gated `POST /api/pipeline/run`
+    // route, which is the only place that should touch state.bin.
     if (!buffer) {
       buffer = await AuctionAggregator.generateSingleItemBin(
-      product as Product,
-      region,
-      parsedRealmId,
-      itemId,
-      r2
-    );
+        product as Product,
+        region,
+        parsedRealmId,
+        itemId,
+        r2
+      );
     }
 
     if (!buffer) {
