@@ -139,6 +139,38 @@ Per-item blobs (`[file]`) carry a header plus 24-hour history and hourly deltas;
 see `src/services/encoder.ts` for the authoritative layout and
 `src/utils/binDecoder.ts` for the reader.
 
+### Per-realm archives
+
+An ingestion run writes three objects per realm, not one per item:
+
+| Key | Contents |
+| --- | -------- |
+| `data/cached/{product}/{region}/{realmId}/state.bin` | the item summary table the dashboard lists |
+| `data/cached/{product}/{region}/{realmId}/realm.bin` | every item's aggregate and its auction lots |
+| `data/cached/{product}/{region}/{realmId}/history.bin` | the rolling store of observed values, gzipped |
+
+The per-item blob the browser receives is **derived at read time** from
+`realm.bin` and `history.bin`, in the same `UNDR v1` format it always had —
+so the client-side decoder is unchanged.
+
+The old shape wrote one object per item: ~15 700 per realm, 175 realms,
+every 30 minutes. That was ~3.96 billion R2 requests a month and 195
+seconds per realm. Three objects per realm is ~25 000 requests a month
+and a couple of seconds — inside R2's free tier and inside Vercel Hobby's
+120-second function budget.
+
+### Nothing on the dashboard is invented
+
+Every number the dashboard shows was observed:
+
+- The price series holds only points a run actually recorded. There is no
+  modelled history.
+- The 24 h delta compares two real observations about a day apart. Before
+  the first 24 hours have passed there is no second observation, and the
+  delta renders as **"not measured yet"** rather than a number.
+- A blob that has not been ingested answers `404`. The read routes never
+  fabricate a fallback, never call Battle.net and never write.
+
 ## API
 
 Most routes are public. The two read paths and `pipeline/run` are rate limited
@@ -154,11 +186,34 @@ per client IP, returning `429` with a `Retry-After` header when over budget.
 | ------ | ------------------------------------------ | ----------------------------------------- |
 | `GET`  | `/api/status`                              | Credential/storage/binary-codec health     |
 | `POST` | `/api/pipeline/run`                        | Bearer-gated full snapshot → aggregate → encode → store |
-| `GET`  | `/api/data/cached/{realmId}/state.bin`     | Realm state blob, `application/octet-stream` |
-| `GET`  | `/api/data/cached/{realmId}/{hash}/{itemId}.bin` | Per-item blob                       |
+| `GET`  | `/api/items-meta`                          | Cache-only item metadata lookup (`?ids=…`) |
+| `POST` | `/api/items-meta/warm`                    | Bearer-gated metadata warming |
+| `GET`  | `/api/realms`                              | Realms with an ingested `state.bin` (`?region=&product=`) |
+| `GET`  | `/api/data/cached/{product}/{region}/{realmId}/state.bin` | Realm state blob, `application/octet-stream` |
+| `GET`  | `/api/data/cached/{product}/{region}/{realmId}/{shard}/{itemId}.bin` | Per-item blob                       |
 
 `realmId` and `itemId` must be positive in-range integers; anything else is a
 `400` rather than being coerced to a default.
+
+### The read paths are read-only
+
+Both `state.bin` and the per-item blob are **pure reads**. A request never
+calls Battle.net and never writes to R2:
+
+- A **hit** returns the stored bytes.
+- A **miss** returns `404` with a JSON body and the `X-WoW-AH-Source:
+  not-ingested` header, naming the realm or item that has not been ingested.
+
+This is deliberate. Both routes used to do work on the reader's behalf: the
+`state.bin` route rebuilt the entire realm from Battle.net on any miss (a
+10–25 MB payload, a rewrite of every per-item blob, and reachable by anyone
+who knew a list of realm ids), and the per-item route generated a *synthetic*
+item blob with fixed placeholder prices and invented auction lots — then
+persisted that fabrication to R2, where it was served as real market data.
+
+Ingestion happens in exactly one place: the bearer-gated
+`POST /api/pipeline/run`. Nothing that a browser can reach may invent,
+rebuild, or overwrite market data.
 
 ### Triggering `pipeline/run` outside the browser
 

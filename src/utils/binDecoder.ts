@@ -12,6 +12,7 @@ import {
   ITEM_FORMAT,
   MAGIC_UNDR,
   STATE_FORMAT,
+  decodeDelta,
   itemSectionStart,
 } from './binaryFormat';
 
@@ -107,8 +108,8 @@ export class BinaryDecoder {
         meanPrice,
         quantity,
         numAuctions,
-        priceDelta24h: priceDeltaScaled / 100,
-        quantityDelta24h: quantityDeltaScaled / 100,
+        priceDelta24h: decodeDelta(priceDeltaScaled),
+        quantityDelta24h: decodeDelta(quantityDeltaScaled),
       });
     }
 
@@ -239,8 +240,8 @@ export class BinaryDecoder {
       medianPrice,
       meanPrice,
       marketCap,
-      priceDelta24h: priceDeltaScaled / 100,
-      quantityDelta24h: quantityDeltaScaled / 100,
+      priceDelta24h: decodeDelta(priceDeltaScaled),
+      quantityDelta24h: decodeDelta(quantityDeltaScaled),
       dailyHistory,
       hourlyDeltas,
       activeLots,

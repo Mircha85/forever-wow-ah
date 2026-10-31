@@ -1,7 +1,5 @@
 import { type NextRequest, NextResponse } from 'next/server';
 import { R2Service } from '@/src/services/r2';
-import { BlizzardService } from '@/src/services/blizzard';
-import { AuctionAggregator } from '@/src/services/aggregator';
 import {
   badRequest,
   enforceRateLimit,
@@ -49,26 +47,35 @@ export async function GET(
     const r2 = new R2Service();
     const stateKey = R2Service.generateStateKey(product as Product, region, connectedRealmId);
 
-    let buffer = await r2.getBin(stateKey);
+    const buffer = await r2.getBin(stateKey);
 
+    // Read-only route. A cache miss means this realm has not been ingested
+    // yet, and the answer is a loud 404 — never a rebuild.
+    //
+    // The previous implementation fetched the full realm snapshot from
+    // Battle.net on every miss and re-ran the whole aggregation, which
+    // meant one public GET could:
+    //   - burn a Battle.net quota slot on a 10-25 MB JSON payload
+    //   - rewrite state.bin and every per-item blob for the realm
+    //   - hold the entire snapshot in memory on a Vercel Hobby instance
+    //   - be triggered 30 times a minute by anyone who knows 30 realm ids
+    //
+    // Ingestion is the bearer-gated pipeline's job: POST /api/pipeline/run.
+    // This route only reads what the pipeline produced.
     if (!buffer) {
-      const blizzard = new BlizzardService({
-        region,
-        namespace: product === 'forever' ? `dynamic-classicann-${region}` : `dynamic-${region}`,
-      });
-      const { snapshot } = await blizzard.fetchAuctionSnapshot(connectedRealmId, true);
-      await AuctionAggregator.processSnapshot(
-        product as Product,
-        region,
-        connectedRealmId,
-        snapshot,
-        r2
+      return new NextResponse(
+        JSON.stringify({
+          error: `No ingested state for realm ${connectedRealmId} (${product}/${region}).`,
+          hint: 'Run the ingestion pipeline (POST /api/pipeline/run) for this realm.',
+        }),
+        {
+          status: 404,
+          headers: {
+            'Content-Type': 'application/json',
+            'X-WoW-AH-Source': 'not-ingested',
+          },
+        }
       );
-      buffer = await r2.getBin(stateKey);
-    }
-
-    if (!buffer) {
-      return new NextResponse('State data not available', { status: 404 });
     }
 
     return new NextResponse(new Uint8Array(buffer), {

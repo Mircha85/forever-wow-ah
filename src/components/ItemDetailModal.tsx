@@ -54,7 +54,12 @@ export function ItemDetailModal({
     // /api/realms). Fall back to a generic label when missing.
     'Connected Realm';
 
-  const priceDeltaPositive = itemData.priceDelta24h >= 0;
+  /**
+   * `null` means the 24 h change has not been measured yet: the item has
+   * only been observed once, so there is nothing to compare against. It is
+   * shown as an explicit "not measured" state, never as 0%.
+   */
+  const priceDeltaPositive = (itemData.priceDelta24h ?? 0) >= 0;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-0 sm:p-3 md:p-6 bg-black/85 backdrop-blur-sm animate-in fade-in duration-200">
@@ -153,6 +158,23 @@ export function ItemDetailModal({
 
         {/* Modal Body */}
         <div className="flex-1 overflow-y-auto overscroll-contain p-3.5 sm:p-6 space-y-5 sm:space-y-6">
+          {/* Cold start notice — the item has been observed once, so there is
+              no series and no 24 h comparison to show yet. */}
+          {itemData.dailyHistory.length === 0 && itemData.hourlyDeltas.length === 0 && (
+            <div className="flex items-start gap-2.5 px-3.5 py-3 rounded-xl bg-slate-950/70 border border-amber-500/40">
+              <Clock className="w-4 h-4 text-amber-400 flex-shrink-0 mt-0.5" />
+              <div className="min-w-0">
+                <p className="font-friz font-bold text-amber-300 text-[12.5px]">
+                  No history for this item yet
+                </p>
+                <p className="text-slate-300 text-[12px] font-narrow mt-0.5">
+                  The pipeline has observed this item once. Its price series and 24 h
+                  change appear as further observations are collected.
+                </p>
+              </div>
+            </div>
+          )}
+
           {/* Key Metrics Grid with ~15-15.2px text (2 columns on mobile, 4 on tablet/desktop) */}
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-4">
             <div className="p-3.5 sm:p-4 rounded-xl bg-slate-950/70 border border-slate-800">
@@ -186,21 +208,34 @@ export function ItemDetailModal({
 
             <div className="p-3.5 sm:p-4 rounded-xl bg-slate-950/70 border border-slate-800">
               <div className="flex items-center gap-1.5 text-[14px] sm:text-[15px] text-slate-400 mb-1.5 font-friz">
-                {priceDeltaPositive ? (
+                {itemData.priceDelta24h === null ? (
+                  <Clock className="w-4 h-4 text-slate-500 flex-shrink-0" />
+                ) : priceDeltaPositive ? (
                   <TrendingUp className="w-4 h-4 text-emerald-400 flex-shrink-0" />
                 ) : (
                   <TrendingDown className="w-4 h-4 text-rose-400 flex-shrink-0" />
                 )}
                 <span className="truncate">24h Price Delta</span>
               </div>
-              <div
-                className={`text-[15.5px] sm:text-[17px] font-bold font-narrow ${
-                  priceDeltaPositive ? 'text-emerald-400' : 'text-rose-400'
-                }`}
-              >
-                {priceDeltaPositive ? '+' : ''}
-                {itemData.priceDelta24h.toFixed(1)}%
-              </div>
+              {itemData.priceDelta24h === null ? (
+                <>
+                  <div className="text-[15.5px] sm:text-[17px] font-bold font-narrow text-slate-400">
+                    Not measured yet
+                  </div>
+                  <div className="text-[11px] text-slate-500 font-narrow mt-0.5">
+                    Needs a second observation 24 h apart
+                  </div>
+                </>
+              ) : (
+                <div
+                  className={`text-[15.5px] sm:text-[17px] font-bold font-narrow ${
+                    priceDeltaPositive ? 'text-emerald-400' : 'text-rose-400'
+                  }`}
+                >
+                  {priceDeltaPositive ? '+' : ''}
+                  {itemData.priceDelta24h.toFixed(1)}%
+                </div>
+              )}
             </div>
           </div>
 

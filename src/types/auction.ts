@@ -94,8 +94,13 @@ export interface DecodedItemBin {
   medianPrice: number;
   meanPrice: number;
   marketCap: number; // BigInt or number in copper
-  priceDelta24h: number; // percentage (-100 to +500)
-  quantityDelta24h: number; // percentage
+  /**
+   * Percentage change against the observation ~24 h earlier, or `null` when
+   * there is not yet a second observation far enough apart to compare
+   * against. `null` means "not measured" and must never be rendered as 0.
+   */
+  priceDelta24h: number | null;
+  quantityDelta24h: number | null;
   dailyHistory: HistoryPoint[];
   hourlyDeltas: HourlyDelta[];
   activeLots: ActiveAuctionLot[];
@@ -108,8 +113,9 @@ export interface StateItemSummary {
   meanPrice: number;
   quantity: number;
   numAuctions: number;
-  priceDelta24h: number; // percentage float (e.g. 5.4 = +5.4%)
-  quantityDelta24h: number;
+  /** Percentage float (e.g. 5.4 = +5.4%), or `null` when not measured yet. */
+  priceDelta24h: number | null;
+  quantityDelta24h: number | null;
 }
 
 export interface DecodedStateBin {

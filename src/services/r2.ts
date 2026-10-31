@@ -30,11 +30,72 @@ export class R2Service {
   private static localMemoryCache: Map<string, { buffer: Buffer; lastModified: Date; eTag: string }> =
     new Map();
 
+  /**
+   * Byte budget for the in-process cache.
+   *
+   * The cache used to be unbounded, which was survivable while every entry
+   * was a small per-item blob. The canonical archives are megabytes each,
+   * and a serverless instance that reads several realms would otherwise
+   * hold every one of them until the process is recycled. The cache is
+   * evicted least-recently-used first once the budget is exceeded.
+   */
+  private static readonly MEMORY_CACHE_MAX_BYTES = 64 * 1024 * 1024;
+
+  /** Bytes currently held by the in-process cache. */
+  private static memoryCacheBytes = 0;
+
+  /**
+   * How long a cached blob is served before it is fetched again.
+   *
+   * Without this, an instance that read a realm once would keep serving
+   * that snapshot for the rest of its life, and the dashboard would show
+   * prices from whenever the instance happened to start. The blobs are
+   * overwritten by the ingestion pipeline every cycle, so a short
+   * freshness window is enough.
+   *
+   * Only applied when R2 is configured: the in-memory fallback has no
+   * other copy to refresh from.
+   */
+  private static readonly MEMORY_CACHE_TTL_MS = 60_000;
+
+  /** Insert or refresh an entry, evicting the oldest entries if over budget. */
+  private static rememberInMemory(
+    key: string,
+    entry: { buffer: Buffer; lastModified: Date; eTag: string }
+  ): void {
+    const existing = R2Service.localMemoryCache.get(key);
+    if (existing) {
+      R2Service.memoryCacheBytes -= existing.buffer.length;
+    }
+
+    // Re-inserting moves the key to the end of the Map's iteration order,
+    // which is what makes the eviction below least-recently-used.
+    R2Service.localMemoryCache.delete(key);
+    R2Service.localMemoryCache.set(key, entry);
+    R2Service.memoryCacheBytes += entry.buffer.length;
+
+    while (
+      R2Service.memoryCacheBytes > R2Service.MEMORY_CACHE_MAX_BYTES &&
+      R2Service.localMemoryCache.size > 1
+    ) {
+      const oldest = R2Service.localMemoryCache.keys().next();
+      if (oldest.done) break;
+      const victim = R2Service.localMemoryCache.get(oldest.value);
+      R2Service.localMemoryCache.delete(oldest.value);
+      R2Service.memoryCacheBytes -= victim?.buffer.length ?? 0;
+    }
+  }
+
   public static clearMemoryCache(): void {
     R2Service.localMemoryCache.clear();
+    R2Service.memoryCacheBytes = 0;
   }
 
   public static deleteMemoryCache(key: string): boolean {
+    const existing = R2Service.localMemoryCache.get(key);
+    if (existing) {
+      R2Service.memoryCacheBytes -= existing.buffer.length;
+    }
     return R2Service.localMemoryCache.delete(key);
   }
 
@@ -108,6 +169,37 @@ export class R2Service {
   }
 
   /**
+   * Storage path for the canonical per-realm item archive:
+   *   data/cached/{product}/{region}/{connectedRealmId}/realm.bin
+   *
+   * One object per realm, holding every item's aggregate and its auction
+   * lots. It replaced the per-item blobs: one object per item cost ~3.96
+   * billion R2 requests a month at 175 realms on a 30-minute schedule.
+   */
+  public static generateRealmKey(
+    product: 'retail' | 'forever',
+    region: 'eu' | 'us',
+    connectedRealmId: number
+  ): string {
+    return `data/cached/${product}/${region}/${connectedRealmId}/realm.bin`;
+  }
+
+  /**
+   * Storage path for the rolling observation history:
+   *   data/cached/{product}/{region}/{connectedRealmId}/history.bin
+   *
+   * Gzipped before upload — the series is mostly empty buckets and
+   * compresses to a fraction of its size.
+   */
+  public static generateHistoryKey(
+    product: 'retail' | 'forever',
+    region: 'eu' | 'us',
+    connectedRealmId: number
+  ): string {
+    return `data/cached/${product}/${region}/${connectedRealmId}/history.bin`;
+  }
+
+  /**
    * Upload binary file to Cloudflare R2 or local cache with optimal HTTP headers.
    */
   public async uploadBin(
@@ -118,7 +210,7 @@ export class R2Service {
     const eTag = `"${Date.now()}-${buffer.length}"`;
 
     // Always keep in local memory cache for ultra-fast local readbacks
-    R2Service.localMemoryCache.set(key, {
+    R2Service.rememberInMemory(key, {
       buffer,
       lastModified: new Date(),
       eTag,
@@ -169,7 +261,15 @@ export class R2Service {
     // Check memory cache first
     const cached = R2Service.localMemoryCache.get(key);
     if (cached) {
-      return cached.buffer;
+      const age = Date.now() - cached.lastModified.getTime();
+      const canRefresh = this.hasCloudflareR2() && this.client !== null;
+      if (!canRefresh || age < R2Service.MEMORY_CACHE_TTL_MS) {
+        // Refresh the recency so the eviction order reflects real use.
+        R2Service.rememberInMemory(key, cached);
+        return cached.buffer;
+      }
+      // The entry is stale and R2 can be asked for a fresh copy — fall
+      // through to the fetch below.
     }
 
     if (!this.hasCloudflareR2() || !this.client) {
@@ -189,7 +289,7 @@ export class R2Service {
       const buffer = Buffer.from(byteArray);
 
       // Populate local cache
-      R2Service.localMemoryCache.set(key, {
+      R2Service.rememberInMemory(key, {
         buffer,
         lastModified: response.LastModified || new Date(),
         eTag: response.ETag || '',

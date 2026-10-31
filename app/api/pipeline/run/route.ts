@@ -110,8 +110,8 @@ export async function POST(req: NextRequest) {
     // file's header for the auth split that made this necessary.
     let warm: Awaited<ReturnType<typeof warmMetadataForIds>> | null = null;
     let warmIds: number[] = [];
-    if (blizzard.hasCredentials() && result.itemsProcessed.length > 0) {
-      warmIds = result.itemsProcessed.slice(0, WARM_CAP);
+    if (blizzard.hasCredentials() && result.topItemIds.length > 0) {
+      warmIds = result.topItemIds.slice(0, WARM_CAP);
       try {
         warm = await warmMetadataForIds(
           (id) => blizzard.fetchItemMetadata(id),
@@ -132,7 +132,20 @@ export async function POST(req: NextRequest) {
       source,
       lastModified,
       result: {
-        ...result,
+        connectedRealmId: result.connectedRealmId,
+        generatedAt: result.generatedAt,
+        totalAuctions: result.totalAuctions,
+        uniqueItemCount: result.uniqueItemCount,
+        stateBinSize: result.stateBinSize,
+        itemBinCount: result.itemBinCount,
+        totalItemBinSize: result.totalItemBinSize,
+        rawJsonEquivalentSize: result.rawJsonEquivalentSize,
+        compressionRatioPercent: result.compressionRatioPercent,
+        processingTimeMs: result.processingTimeMs,
+        historyBytes: result.historyBytes,
+        // How many items have a measured 24 h delta. The rest are waiting
+        // for a second observation a day apart.
+        itemsWithDelta: result.itemsWithDelta,
         source: r2.hasCloudflareR2() ? 'Cloudflare R2 Bucket' : 'Fast Local/Memory Cache',
       },
       // Informational — `{ warmedIds, fetched, skipped, failed, retriedOut }`

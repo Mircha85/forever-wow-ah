@@ -1,6 +1,8 @@
 import { type NextRequest, NextResponse } from 'next/server';
 import { R2Service } from '@/src/services/r2';
-import { AuctionAggregator } from '@/src/services/aggregator';
+import { readRealmItem, readHistoryItem } from '@/src/services/realmArchive';
+import { loadRealmArchives } from '@/src/services/realmCache';
+import { composeItemBin } from '@/src/services/itemView';
 import {
   badRequest,
   enforceRateLimit,
@@ -17,12 +19,23 @@ const LIMIT = 60;
 const WINDOW_MS = 60_000;
 
 /**
- * Per-item binary blob with product + region partition.
+ * Per-item view of a realm's auction data.
  *
  *   /api/data/cached/{product}/{region}/{realmId}/{shard}/{itemId}.bin
  *
- * `{shard}` is `itemId & 0xff` — preserved in the URL for layout reasons but
- * the route extracts `itemId` from the filename, not the shard.
+ * `{shard}` is `{itemId} & 0xff` — preserved in the URL for layout
+ * reasons but the route extracts `itemId` from the filename, not the shard.
+ *
+ * The response is the same `UNDR v1` item blob the dashboard has always
+ * received. What changed is where it comes from: the ingestion pipeline
+ * now writes two objects per realm — an item archive and an observation
+ * history — and this route composes the item view from them.
+ *
+ * It used to be a third object, written per item per realm per run: at
+ * 15 700 items across 175 realms on a 30-minute schedule that was ~3.96
+ * billion R2 requests a month and 195 seconds per realm.
+ *
+ * The route is read-only. It never calls Battle.net and never writes.
  */
 export async function GET(
   req: NextRequest,
@@ -51,41 +64,46 @@ export async function GET(
     }
 
     const r2 = new R2Service();
-    const itemKey = R2Service.generateItemKey(
+    const loaded = await loadRealmArchives(
+      r2,
       product as Product,
       region,
-      parsedRealmId,
-      itemId
+      parsedRealmId
     );
 
-    let buffer = await r2.getBin(itemKey);
-
-    // Cache-miss policy: go straight to the synthetic single-item bin.
-    //
-    // We deliberately do NOT rebuild the full realm snapshot here. The
-    // previous version called `fetchAuctionSnapshot` + `processSnapshot`
-    // on every miss, which:
-    //   - burns a Battle.net quota slot (10-25 MB JSON) per miss
-    //   - rewrites state.bin + thousands of item.bin files when only one
-    //     was requested
-    //   - is trivially exploitable: 200 different miss IDs => 200 full
-    //     snapshot rebuilds
-    //   - blows past the Vercel Hobby memory ceiling on a 15k-item realm
-    //
-    // Real data is populated via the bearer-gated `POST /api/pipeline/run`
-    // route, which is the only place that should touch state.bin.
-    if (!buffer) {
-      buffer = await AuctionAggregator.generateSingleItemBin(
-        product as Product,
-        region,
-        parsedRealmId,
-        itemId,
-        r2
+    // Two different "not there yet" cases, and they are worth telling
+    // apart: the realm has never been ingested, or the realm has been
+    // ingested but this item was not listed in it.
+    if (!loaded) {
+      return notIngested(
+        `No ingested data for realm ${parsedRealmId} (${product}/${region}).`,
+        'Run the ingestion pipeline (POST /api/pipeline/run) for this realm.'
       );
     }
 
+    const item = readRealmItem(loaded.realm, itemId);
+    if (!item) {
+      return notIngested(
+        `Item #${itemId} was not listed in realm ${parsedRealmId} at the last ingestion.`,
+        'It may have sold, expired, or been delisted since then.'
+      );
+    }
+
+    const historyItem = loaded.history
+      ? readHistoryItem(loaded.history, itemId)
+      : null;
+
+    const buffer = composeItemBin({
+      realm: loaded.realm,
+      item,
+      history: loaded.history,
+      historyItem,
+    });
     if (!buffer) {
-      return badRequest(`No data available for item #${itemId}`);
+      return notIngested(
+        `No view available for item #${itemId} in realm ${parsedRealmId}.`,
+        'Re-run the ingestion pipeline for this realm.'
+      );
     }
 
     return new NextResponse(new Uint8Array(buffer), {
@@ -93,7 +111,7 @@ export async function GET(
       headers: {
         'Content-Type': 'application/octet-stream',
         'Content-Disposition': `inline; filename="${itemId}.bin"`,
-        'Cache-Control': 'public, max-age=900, stale-while-revalidate=1800',
+        'Cache-Control': 'public, max-age=300, stale-while-revalidate=900',
         'X-WoW-AH-Codec': 'UNDR-v1',
         'X-WoW-AH-Product': product,
         'X-WoW-AH-Region': region,
@@ -102,4 +120,23 @@ export async function GET(
   } catch (err: unknown) {
     return upstreamError(err, 'data/cached/[file] v3');
   }
+}
+
+/**
+ * A 404 that says what is missing.
+ *
+ * Both former behaviours of this route were removed: rebuilding the realm
+ * from Battle.net on a miss (a 10-25 MB payload, a rewrite of every
+ * per-item blob, reachable by anyone) and generating a synthetic item
+ * blob with fixed placeholder prices that was then persisted to R2. A
+ * missing item now answers honestly instead of inventing one.
+ */
+function notIngested(error: string, hint: string): NextResponse {
+  return new NextResponse(JSON.stringify({ error, hint }), {
+    status: 404,
+    headers: {
+      'Content-Type': 'application/json',
+      'X-WoW-AH-Source': 'not-ingested',
+    },
+  });
 }

@@ -23,6 +23,7 @@ import {
   Star,
   X,
   AlertCircle,
+  Info,
 } from 'lucide-react';
 import { WOW_AUCTION_CATEGORIES, matchesCategoryFilter } from '@/src/data/categories';
 import { CRAFTING_RECIPES } from '@/src/data/craftingRecipes';
@@ -32,6 +33,21 @@ import { ProfessionsView } from '@/src/components/ProfessionsView';
 import { FlippingView } from '@/src/components/FlippingView';
 import { CatalogView, type CatalogItem } from '@/src/components/CatalogView';
 import type { FlippingOpportunity } from '@/src/types/dashboard';
+
+/**
+ * Compares two 24 h deltas for sorting.
+ *
+ * A delta of `null` means the change has not been measured yet — there is
+ * no second observation far enough apart to compare against. Such an item
+ * sorts last rather than being treated as a 0% change, which would rank
+ * unmeasured items next to genuinely flat ones.
+ */
+function compareDelta(a: number | null, b: number | null): number {
+  if (a === null && b === null) return 0;
+  if (a === null) return 1;
+  if (b === null) return -1;
+  return a - b;
+}
 
 export default function WowForeverAhDashboard() {
   const [selectedRealmId, setSelectedRealmId] = useState<number>(1305);
@@ -153,7 +169,14 @@ export default function WowForeverAhDashboard() {
   const [rawItemBuffer, setRawItemBuffer] = useState<ArrayBuffer | undefined>(undefined);
   const [isLoadingItem, setIsLoadingItem] = useState<boolean>(false);
   const [loadingItemId, setLoadingItemId] = useState<number | null>(null);
-  const [selectionError, setSelectionError] = useState<{ itemId: number; message: string } | null>(null);
+  const [selectionError, setSelectionError] = useState<{
+    itemId: number;
+    message: string;
+    /** `not-ingested` is a normal state, not a failure: the pipeline has not
+     *  produced a record for this item yet, so retrying immediately cannot
+     *  help. It gets an informational banner instead of an error one. */
+    kind: 'error' | 'not-ingested';
+  } | null>(null);
   const [showBinaryInspector, setShowBinaryInspector] = useState<boolean>(false);
 
   // Region — kept so the state.bin URL stays region-aware. The realm
@@ -315,6 +338,18 @@ export default function WowForeverAhDashboard() {
         signal: controller.signal,
       });
 
+      if (res.status === 404) {
+        // Not an error: the item simply has no ingested record for this
+        // realm yet. Say so plainly instead of showing a failed request.
+        setSelectionError({
+          itemId,
+          kind: 'not-ingested',
+          message:
+            `No ingested data for item #${itemId} in this realm. ` +
+            'The extraction pipeline has not produced a record for it yet.',
+        });
+        return;
+      }
       if (!res.ok) {
         throw new Error(`Could not load binary data for item #${itemId} (HTTP ${res.status})`);
       }
@@ -335,6 +370,7 @@ export default function WowForeverAhDashboard() {
           : 'Network request failed. Check your connection and try again.';
       setSelectionError({
         itemId,
+        kind: 'error',
         message: isAbort
           ? `Request for item #${itemId} timed out after 20s. The server may be under load - retry.`
           : message,
@@ -390,9 +426,9 @@ export default function WowForeverAhDashboard() {
         case 'qty_desc':
           return b.quantity - a.quantity;
         case 'delta_desc':
-          return b.priceDelta24h - a.priceDelta24h;
+          return compareDelta(b.priceDelta24h, a.priceDelta24h);
         case 'delta_asc':
-          return a.priceDelta24h - b.priceDelta24h;
+          return compareDelta(a.priceDelta24h, b.priceDelta24h);
         default:
           return 0;
       }
@@ -439,6 +475,12 @@ export default function WowForeverAhDashboard() {
   const topMovers = useMemo(() => {
     if (!stateData) return [];
     return [...stateData.items]
+      // Only items whose 24 h delta has actually been measured can be a
+      // "mover". An item with no second observation yet has no delta, and
+      // treating its missing measurement as 0 would rank it as a mover.
+      .filter(
+        (it): it is typeof it & { priceDelta24h: number } => it.priceDelta24h !== null
+      )
       .sort((a, b) => Math.abs(b.priceDelta24h) - Math.abs(a.priceDelta24h))
       .slice(0, 4)
       .map((it) => ({
@@ -788,12 +830,26 @@ const currentRealm: RealmView = {
       {selectionError && (
         <div
           role="alert"
-          className="fixed bottom-4 right-4 sm:bottom-6 sm:right-6 z-50 flex items-start gap-2.5 px-3.5 py-2.5 sm:px-4 sm:py-3 bg-slate-900/95 border border-rose-500/60 rounded-xl shadow-2xl text-xs font-narrow max-w-[min(420px,calc(100vw-2rem))] animate-in fade-in slide-in-from-bottom-2"
+          className={`fixed bottom-4 right-4 sm:bottom-6 sm:right-6 z-50 flex items-start gap-2.5 px-3.5 py-2.5 sm:px-4 sm:py-3 bg-slate-900/95 border rounded-xl shadow-2xl text-xs font-narrow max-w-[min(420px,calc(100vw-2rem))] animate-in fade-in slide-in-from-bottom-2 ${
+            selectionError.kind === 'not-ingested'
+              ? 'border-amber-500/60'
+              : 'border-rose-500/60'
+          }`}
         >
-          <AlertCircle className="w-4 h-4 text-rose-400 flex-shrink-0 mt-0.5" />
+          {selectionError.kind === 'not-ingested' ? (
+            <Info className="w-4 h-4 text-amber-400 flex-shrink-0 mt-0.5" />
+          ) : (
+            <AlertCircle className="w-4 h-4 text-rose-400 flex-shrink-0 mt-0.5" />
+          )}
           <div className="flex-1 min-w-0">
-            <p className="font-friz font-bold text-rose-300 text-[12.5px]">
-              Could not load item #{selectionError.itemId}
+            <p
+              className={`font-friz font-bold text-[12.5px] ${
+                selectionError.kind === 'not-ingested' ? 'text-amber-300' : 'text-rose-300'
+              }`}
+            >
+              {selectionError.kind === 'not-ingested'
+                ? `No data for item #${selectionError.itemId}`
+                : `Could not load item #${selectionError.itemId}`}
             </p>
             <p className="text-slate-300 mt-0.5 break-words">{selectionError.message}</p>
           </div>
