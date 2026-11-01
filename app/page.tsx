@@ -210,6 +210,18 @@ export default function WowForeverAhDashboard() {
     };
   }, [region]);
 
+  // The realms the item modal can open this item in. Every entry is a
+  // realm the pipeline has actually ingested — the modal used to show a
+  // cross-realm comparison whose prices were generated from a hash.
+  const realmOptions = React.useMemo(
+    () =>
+      Object.entries(realmNames).map(([id, name]) => ({
+        id: Number(id),
+        name,
+      })),
+    [realmNames]
+  );
+
   // Load state.bin from static cache/API. Refresh by changing realm
   // or by bumping refreshTick (used after pipeline ingestion).
   useEffect(() => {
@@ -890,6 +902,7 @@ const currentRealm: RealmView = {
           onSelectRealm={(targetRealmId) => {
             void handleSelectItem(selectedItemBin.itemId, targetRealmId);
           }}
+          realms={realmOptions}
         />
       )}
 

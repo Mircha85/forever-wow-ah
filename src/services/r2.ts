@@ -200,13 +200,37 @@ export class R2Service {
   }
 
   /**
+   * Storage path for the resolved realm names of a region:
+   *   data/cached/{product}/{region}/names.json
+   *
+   * A map of connected realm id → display name, written by the ingestion
+   * pipeline the first time it sees a realm. The public listing route
+   * reads it from here rather than asking Battle.net: a public GET that
+   * calls the upstream once per realm turns one request into 175 upstream
+   * calls.
+   */
+  public static generateRealmNamesKey(
+    product: 'retail' | 'forever',
+    region: 'eu' | 'us'
+  ): string {
+    return `data/cached/${product}/${region}/names.json`;
+  }
+
+  /**
    * Upload binary file to Cloudflare R2 or local cache with optimal HTTP headers.
    */
   public async uploadBin(
     key: string,
     buffer: Buffer,
     cacheControl: string = 'public, max-age=900, stale-while-revalidate=3600'
-  ): Promise<{ success: boolean; key: string; size: number; source: 'r2' | 'local_cache' }> {
+  ): Promise<{
+    success: boolean;
+    key: string;
+    size: number;
+    source: 'r2' | 'local_cache';
+    /** Why the write failed, when it did. */
+    error?: string;
+  }> {
     const eTag = `"${Date.now()}-${buffer.length}"`;
 
     // Always keep in local memory cache for ultra-fast local readbacks
@@ -245,11 +269,15 @@ export class R2Service {
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
       console.warn(`[R2Service] R2 upload error for ${key} (${message}). Retained in memory cache.`);
+      // The blob is in the process cache, but the process cache dies with
+      // the instance. Reporting `success: true` here would let an ingestion
+      // run claim it stored a snapshot that nobody will ever read.
       return {
-        success: true,
+        success: false,
         key,
         size: buffer.length,
         source: 'local_cache',
+        error: message,
       };
     }
   }

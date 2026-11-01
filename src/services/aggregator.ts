@@ -8,7 +8,7 @@ import {
 import { BinaryEncoder } from './encoder';
 import { R2Service } from './r2';
 import { MAX_UINT32 } from '../utils/binaryFormat';
-import { gzipForStorage } from './realmArchive';
+import { gzipForStorage, readStateHeader } from './realmArchive';
 import {
   buildHistoryArchive,
   percentChange,
@@ -96,6 +96,41 @@ export class AuctionAggregator {
     const items = this.aggregate(auctions, connectedRealmId);
     items.sort((a, b) => a.itemId - b.itemId);
 
+    // --- Sanity guards ---------------------------------------------------
+    // An ingestion run overwrites what the dashboard reads. A snapshot that
+    // is empty, implausibly small, or older than what is already stored
+    // would replace a good snapshot with a worse one, so it is refused
+    // rather than written.
+    if (auctions.length === 0) {
+      throw new Error(
+        `Refusing to ingest realm ${connectedRealmId}: the snapshot contains no auctions.`
+      );
+    }
+
+    const stateKey = R2Service.generateStateKey(product, region, connectedRealmId);
+    const previousHeader = readStateHeader(
+      (await r2.getBin(stateKey)) ?? Buffer.alloc(0)
+    );
+
+    if (previousHeader) {
+      if (previousHeader.generatedAt > generatedAt) {
+        throw new Error(
+          `Refusing to ingest realm ${connectedRealmId}: the stored snapshot is newer ` +
+            `(${previousHeader.generatedAt} > ${generatedAt}).`
+        );
+      }
+      if (
+        previousHeader.totalItemsCount > 0 &&
+        items.length < previousHeader.totalItemsCount * 0.25
+      ) {
+        throw new Error(
+          `Refusing to ingest realm ${connectedRealmId}: ${items.length} items against ` +
+            `${previousHeader.totalItemsCount} in the stored snapshot — that looks like a ` +
+            'partial upstream response.'
+        );
+      }
+    }
+
     // --- Rolling history ------------------------------------------------
     // The previous archive is read, not rebuilt: its buckets carry the
     // observations of every earlier run. The current run adds one
@@ -174,12 +209,27 @@ export class AuctionAggregator {
     const historyBuffer = gzipForStorage(history.buffer);
 
     // --- Write -----------------------------------------------------------
-    const stateKey = R2Service.generateStateKey(product, region, connectedRealmId);
     const realmKey = R2Service.generateRealmKey(product, region, connectedRealmId);
 
-    await r2.uploadBin(stateKey, stateBuffer);
-    await r2.uploadBin(realmKey, gzipForStorage(realmBuffer));
-    await r2.uploadBin(historyKey, historyBuffer);
+    // A run that cannot store what it ingested has not succeeded. The
+    // upload helper keeps failed writes in the process cache, where they
+    // die with the instance, so the failure has to surface here rather
+    // than be reported as a successful run.
+    const uploads = await Promise.all([
+      r2.uploadBin(stateKey, stateBuffer),
+      r2.uploadBin(realmKey, gzipForStorage(realmBuffer)),
+      r2.uploadBin(historyKey, historyBuffer),
+    ]);
+    const failed = uploads.filter((upload) => !upload.success);
+    if (failed.length > 0) {
+      const detail = failed
+        .map((upload) => `${upload.key} (${upload.error ?? 'unknown error'})`)
+        .join('; ');
+      throw new Error(
+        `Failed to store ${failed.length} of ${uploads.length} objects for realm ` +
+          `${connectedRealmId}: ${detail}`
+      );
+    }
 
     const endTime = performance.now();
     const processingTimeMs = Math.round(endTime - startTime);

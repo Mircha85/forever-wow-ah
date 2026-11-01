@@ -2,6 +2,7 @@ import { type NextRequest, NextResponse } from 'next/server';
 import { BlizzardService } from '@/src/services/blizzard';
 import { R2Service } from '@/src/services/r2';
 import { AuctionAggregator } from '@/src/services/aggregator';
+import { recordRealmName } from '@/src/services/realmNames';
 import { warmMetadataForIds } from '@/src/services/itemMetadataCache';
 import {
   badRequest,
@@ -100,6 +101,24 @@ export async function POST(req: NextRequest) {
       snapshot,
       r2
     );
+
+    // Resolve the realm's display name once, on the authenticated path,
+    // so the public listing route can show real names without ever
+    // calling Battle.net itself.
+    try {
+      await recordRealmName({
+        r2,
+        blizzard,
+        product,
+        region,
+        connectedRealmId,
+      });
+    } catch (err) {
+      console.error(
+        `[API] pipeline/run: could not record the name of realm ${connectedRealmId}:`,
+        err instanceof Error ? err.message : String(err)
+      );
+    }
 
     // Inline metadata warming so the cron-driven cache stays warm without
     // needing a separate bearer call. Best-effort: a Blizzard outage on

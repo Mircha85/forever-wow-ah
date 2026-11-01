@@ -6,7 +6,6 @@ import { getItemMetadata, getQualityColor, getQualityBorderColor } from '../data
 import { WoWMoney } from './WoWMoney';
 import { AuctionChart } from './AuctionChart';
 import { HourlyHeatMaps } from './HourlyHeatMaps';
-import { MultiRealmPriceTable } from './MultiRealmPriceTable';
 import {
   X,
   TrendingUp,
@@ -31,12 +30,15 @@ interface ItemDetailModalProps {
   isFavorited?: boolean;
   onToggleFavorite?: () => void;
   onSelectRealm?: (realmId: number) => void;
+  /** Realms the item can be opened in. Used by the cross-realm switcher. */
+  realms?: Array<{ id: number; name: string }>;
   meta?: WowItemMetadata;
 }
 
 export function ItemDetailModal({
   itemData,
   realmName,
+  realms = [],
   onClose,
   onOpenBinaryInspector,
   isFavorited = false,
@@ -60,6 +62,16 @@ export function ItemDetailModal({
    * shown as an explicit "not measured" state, never as 0%.
    */
   const priceDeltaPositive = (itemData.priceDelta24h ?? 0) >= 0;
+
+  /**
+   * The archive keeps a bounded number of auction lots per item — the
+   * cheapest ones. When the item has more listings than that, the label
+   * says so, rather than letting the table imply it holds all of them.
+   */
+  const lotsLabel =
+    itemData.activeLots.length < itemData.numAuctions
+      ? `cheapest ${itemData.activeLots.length} of ${itemData.numAuctions}`
+      : `${itemData.activeLots.length}`;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-0 sm:p-3 md:p-6 bg-black/85 backdrop-blur-sm animate-in fade-in duration-200">
@@ -275,7 +287,7 @@ export function ItemDetailModal({
                 }`}
               >
                 <Layers className="w-4 h-4 text-emerald-400 flex-shrink-0" />
-                <span>Active Lots ({itemData.activeLots.length})</span>
+                <span>Active Lots ({lotsLabel})</span>
               </button>
 
               <button
@@ -317,25 +329,14 @@ export function ItemDetailModal({
                 itemName={meta.name}
               />
 
-              {/* Multi-Realm Price Comparison Table (TUJ Cross-Realm View) */}
-              <div className="space-y-2 pt-2">
-                <div className="flex items-center justify-between text-slate-300 font-friz px-1">
-                  <span className="font-bold uppercase tracking-wider text-amber-400 text-[14.5px] sm:text-[15.2px] flex items-center gap-2">
-                    <span>🌐</span>
-                    <span>Cross-Realm Price & Stock Comparison</span>
-                  </span>
-                  <span className="text-[12px] text-slate-400 font-narrow">
-                    Active: <span className="text-amber-300 font-semibold">{resolvedRealmName}</span>
-                  </span>
-                </div>
-                <MultiRealmPriceTable
-                  itemId={itemData.itemId}
+              {/* Cross-realm navigation for this item */}
+              {onSelectRealm && realms.length > 0 && (
+                <RealmSwitcher
+                  realms={realms}
                   currentRealmId={itemData.connectedRealmId}
-                  currentPriceCopper={itemData.minBuyout || itemData.medianPrice}
-                  currentQuantity={itemData.totalQuantity || itemData.activeLots.reduce((acc, l) => acc + l.quantity, 0)}
                   onSelectRealm={onSelectRealm}
                 />
-              </div>
+              )}
             </div>
           ) : activeTab === 'lots' ? (
             <div className="bg-slate-950/80 border border-slate-800 rounded-xl overflow-hidden font-narrow animate-in fade-in duration-150">
@@ -408,31 +409,20 @@ export function ItemDetailModal({
                 itemName={meta.name}
               />
 
-              {/* Section 3: Multi-Realm Price Comparison Table */}
-              <div className="space-y-2">
-                <div className="flex items-center justify-between text-slate-300 font-friz px-1">
-                  <span className="font-bold uppercase tracking-wider text-amber-400 text-[15px] sm:text-[15.5px] flex items-center gap-2">
-                    <span>🌐</span>
-                    <span>Cross-Realm Price & Stock Comparison</span>
-                  </span>
-                  <span className="text-[12px] text-slate-400 font-narrow">
-                    Active: <span className="text-amber-300 font-semibold">{resolvedRealmName}</span>
-                  </span>
-                </div>
-                <MultiRealmPriceTable
-                  itemId={itemData.itemId}
+              {/* Section 3: Cross-realm navigation for this item */}
+              {onSelectRealm && realms.length > 0 && (
+                <RealmSwitcher
+                  realms={realms}
                   currentRealmId={itemData.connectedRealmId}
-                  currentPriceCopper={itemData.minBuyout || itemData.medianPrice}
-                  currentQuantity={itemData.totalQuantity || itemData.activeLots.reduce((acc, l) => acc + l.quantity, 0)}
                   onSelectRealm={onSelectRealm}
                 />
-              </div>
+              )}
 
               {/* Section 4: Active Lots Table */}
               <div className="space-y-2.5">
                 <div className="flex items-center justify-between text-slate-300 font-friz px-1">
                   <span className="font-bold uppercase tracking-wider text-emerald-400 text-[15px] sm:text-[15.5px]">
-                    Active Auction Lots ({itemData.activeLots.length})
+                    Active Auction Lots ({lotsLabel})
                   </span>
                 </div>
                 <div className="bg-slate-950/80 border border-slate-800 rounded-xl overflow-hidden font-narrow">
@@ -495,3 +485,61 @@ export function ItemDetailModal({
     </div>
   );
 };
+
+/**
+ * Loads this item from another realm.
+ *
+ * This replaced a "Cross-Realm Price & Stock Comparison" table whose
+ * prices were produced by hashing the item id — a number shaped like a
+ * price that was not one. The replacement shows no comparison at all
+ * until it can show a real one: picking a realm loads that realm's actual
+ * item view, straight from its archive.
+ */
+function RealmSwitcher({
+  realms,
+  currentRealmId,
+  onSelectRealm,
+}: {
+  realms: Array<{ id: number; name: string }>;
+  currentRealmId: number;
+  onSelectRealm: (realmId: number) => void;
+}) {
+  const others = realms.filter((r) => r.id !== currentRealmId);
+  const [selected, setSelected] = useState<number>(others[0]?.id ?? currentRealmId);
+
+  if (others.length === 0) return null;
+
+  return (
+    <div className="space-y-2 pt-2">
+      <div className="flex items-center justify-between text-slate-300 font-friz px-1">
+        <span className="font-bold uppercase tracking-wider text-amber-400 text-[14.5px] sm:text-[15.2px] flex items-center gap-2">
+          <span>🌐</span>
+          <span>Open this item in another realm</span>
+        </span>
+      </div>
+      <div className="flex items-center gap-2">
+        <select
+          value={selected}
+          onChange={(e) => setSelected(Number(e.target.value))}
+          className="flex-1 min-w-0 px-2.5 py-1.5 text-[13.5px] font-narrow rounded-md bg-slate-950/80 border border-slate-700 text-slate-200 focus:outline-none focus:border-amber-500/60"
+        >
+          {others.map((realm) => (
+            <option key={realm.id} value={realm.id}>
+              {realm.name}
+            </option>
+          ))}
+        </select>
+        <button
+          type="button"
+          onClick={() => onSelectRealm(selected)}
+          className="px-3 py-1.5 text-[13px] font-semibold rounded-md bg-amber-500/20 hover:bg-amber-500/30 text-amber-200 border border-amber-500/40 transition-colors cursor-pointer"
+        >
+          Open
+        </button>
+      </div>
+      <p className="text-[11.5px] text-slate-500 font-narrow px-1">
+        Loads the other realm&apos;s own archived data for this item.
+      </p>
+    </div>
+  );
+}

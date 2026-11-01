@@ -9,7 +9,9 @@ import {
   HISTORY_FORMAT,
   MAGIC_HISTORY,
   MAGIC_REALM,
+  MAGIC_UNDR,
   REALM_FORMAT,
+  STATE_FORMAT,
 } from '../utils/binaryFormat';
 
 /**
@@ -87,6 +89,31 @@ export interface HistoryIndex {
   itemCount: number;
   offsets: Map<number, number>;
   buffer: Buffer;
+}
+
+/**
+ * The header of a `state.bin`, read without decoding the whole table.
+ *
+ * The ingestion pipeline reads it to decide whether an incoming snapshot
+ * is sane: an empty one, an implausibly smaller one, or an older one
+ * than what is already stored must not overwrite a good snapshot.
+ */
+export interface StateHeader {
+  connectedRealmId: number;
+  generatedAt: number;
+  totalAuctionsCount: number;
+  totalItemsCount: number;
+}
+
+export function readStateHeader(raw: Buffer): StateHeader | null {
+  if (!raw || raw.length < STATE_FORMAT.headerSize) return null;
+  if (raw.readUInt32LE(STATE_FORMAT.field.magic) !== MAGIC_UNDR) return null;
+  return {
+    connectedRealmId: raw.readUInt32LE(STATE_FORMAT.field.connectedRealmId),
+    generatedAt: raw.readUInt32LE(STATE_FORMAT.field.generatedAt),
+    totalAuctionsCount: raw.readUInt32LE(STATE_FORMAT.field.totalAuctionsCount),
+    totalItemsCount: raw.readUInt32LE(STATE_FORMAT.field.totalItemsCount),
+  };
 }
 
 /**

@@ -170,6 +170,30 @@ Every number the dashboard shows was observed:
   delta renders as **"not measured yet"** rather than a number.
 - A blob that has not been ingested answers `404`. The read routes never
   fabricate a fallback, never call Battle.net and never write.
+- The realm names in the picker are resolved by the ingestion pipeline and
+  read from `data/cached/{product}/{region}/names.json`. The public
+  listing route does not call Battle.net — it used to, once per realm,
+  which turned one request into 175 upstream calls.
+
+### The history has a byte budget
+
+`history.bin` is rewritten *and* read back on every run, so its size is
+multiplied by the number of runs a month. An item that stays listed
+accrues an observation every hour, so the series grows to millions of
+points.
+
+The archive therefore has a budget (`HISTORY_RAW_BUDGET_BYTES`). When it
+would be exceeded, the hourly series is trimmed first — keeping every
+item's 24-hour anchor, which is what the price delta is computed from —
+and the daily series only if that is not enough. Measured on a real
+realm: 7.4 MB without the budget, 1.4 MB with it.
+
+### Ingestion refuses a snapshot it should not
+
+A run overwrites what the dashboard reads, so it declines to write when
+the snapshot has no auctions, when it is older than the stored one, or
+when it holds fewer than a quarter of the stored item count. The stored
+snapshot is left untouched.
 
 ## API
 
