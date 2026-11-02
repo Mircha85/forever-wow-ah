@@ -185,8 +185,9 @@ points.
 The archive therefore has a budget (`HISTORY_RAW_BUDGET_BYTES`). When it
 would be exceeded, the hourly series is trimmed first — keeping every
 item's 24-hour anchor, which is what the price delta is computed from —
-and the daily series only if that is not enough. Measured on a real
-realm: 7.4 MB without the budget, 1.4 MB with it.
+and the daily series only if that is not enough. Measured on a snapshot
+of a real realm's shape (15 708 items): 7.4 MB without the budget, 1.4 MB
+with it.
 
 ### Ingestion refuses a snapshot it should not
 
