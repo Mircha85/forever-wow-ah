@@ -82,6 +82,12 @@ interface RealmResult {
   durationSec: number;
   items?: number;
   error?: string;
+  /** Bytes of JSON pulled from Battle.net for this realm. */
+  downloadBytes?: number;
+  /** Bytes on the wire, when the server reported a content length. */
+  wireBytes?: number;
+  /** Bytes written to R2 for this realm. */
+  writtenBytes?: number;
 }
 
 async function processRealm(
@@ -94,7 +100,7 @@ async function processRealm(
   let lastErr: unknown = null;
   for (let attempt = 1; attempt <= RETRIES; attempt++) {
     try {
-      const { snapshot } = await blizzard.fetchAuctionSnapshot(realmId, true);
+      const { snapshot, rawBytes, wireBytes } = await blizzard.fetchAuctionSnapshot(realmId, true);
       const result = await AuctionAggregator.processSnapshot(
         PRODUCT,
         region,
@@ -108,6 +114,12 @@ async function processRealm(
         ok: true,
         durationSec: Number(((Date.now() - start) / 1000).toFixed(1)),
         items: result.itemBinCount,
+        /** Bytes of JSON pulled from Battle.net for this realm. */
+        downloadBytes: rawBytes,
+        /** Bytes on the wire, when the server reported a content length. */
+        wireBytes: wireBytes ?? undefined,
+        /** Bytes written to R2 for this realm. */
+        writtenBytes: result.stateBinSize + result.totalItemBinSize,
       };
     } catch (err) {
       lastErr = err;
@@ -163,12 +175,28 @@ async function main() {
     finishedAt: string | null;
     region: string | null;
     totals: { total: number; ok: number; failed: number };
+    traffic: {
+      downloadedBytes: number;
+      wireBytes: number;
+      writtenBytes: number;
+      totalRealmSec: number;
+      meanRealmSec: number;
+      wallClockSec: number;
+    };
     perRealm: Record<number, RealmResult>;
   } = {
     startedAt: new Date().toISOString(),
     finishedAt: null,
     region: REGION_FILTER || null,
     totals: { total: ALL.length, ok: 0, failed: 0 },
+    traffic: {
+      downloadedBytes: 0,
+      wireBytes: 0,
+      writtenBytes: 0,
+      totalRealmSec: 0,
+      meanRealmSec: 0,
+      wallClockSec: 0,
+    },
     perRealm: {},
   };
 
@@ -213,13 +241,35 @@ async function main() {
   );
 
   summary.finishedAt = new Date().toISOString();
+
+  // Traffic and timing totals — what the run actually cost.
+  for (const result of Object.values(summary.perRealm)) {
+    if (!result.ok) continue;
+    summary.traffic.downloadedBytes += result.downloadBytes ?? 0;
+    summary.traffic.wireBytes += result.wireBytes ?? 0;
+    summary.traffic.writtenBytes += result.writtenBytes ?? 0;
+    summary.traffic.totalRealmSec += result.durationSec;
+  }
+  const okCount = summary.totals.ok || 1;
+  summary.traffic.meanRealmSec = Number((summary.traffic.totalRealmSec / okCount).toFixed(1));
+  summary.traffic.wallClockSec = Number(((Date.now() - startedAtMs) / 1000).toFixed(1));
+
   fs.writeFileSync(SUMMARY_PATH, JSON.stringify(summary, null, 2));
 
   console.log('');
   console.log('=== DONE ===');
   console.log(`OK:      ${summary.totals.ok}`);
   console.log(`Failed:  ${summary.totals.failed}`);
-  console.log(`Time:    ${((Date.now() - startedAtMs) / 1000).toFixed(0)}s`);
+  console.log(`Time:    ${summary.traffic.wallClockSec}s wall clock`);
+  console.log(
+    `Per realm: ${summary.traffic.meanRealmSec}s mean ` +
+      `(${summary.traffic.totalRealmSec}s summed over realms)`
+  );
+  console.log(
+    `Downloaded from Battle.net: ${(summary.traffic.downloadedBytes / 1024 / 1024).toFixed(1)} MB ` +
+      `of JSON payload`
+  );
+  console.log(`Written to R2:             ${(summary.traffic.writtenBytes / 1024 / 1024).toFixed(1)} MB`);
   console.log(`Summary: ${SUMMARY_PATH}`);
 }
 

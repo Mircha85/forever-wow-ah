@@ -43,6 +43,14 @@ export type AuctionFetchResult = {
   snapshot: BlizzardAuctionSnapshot;
   source: 'blizzard_api';
   lastModified: string | null;
+  /**
+   * Bytes the payload occupied on the wire, when the server reported a
+   * content length. This is the compressed transfer size, which is what a
+   * traffic budget is about.
+   */
+  wireBytes: number | null;
+  /** Bytes of the decoded JSON payload — what the payload "weighs". */
+  rawBytes: number;
 };
 
 /**
@@ -349,7 +357,15 @@ export class BlizzardService {
       this.lastModifiedCache.set(connectedRealmId, lastModified);
     }
 
-    const snapshot = (await response.json()) as BlizzardAuctionSnapshot;
+    // Read the payload as text rather than JSON so its size can be
+    // measured: the decoded size is what the aggregation has to chew
+    // through, and the content length is what crossed the wire.
+    const text = await response.text();
+    const rawBytes = Buffer.byteLength(text, 'utf8');
+    const contentLength = response.headers.get('content-length');
+    const wireBytes = contentLength ? Number(contentLength) : null;
+
+    const snapshot = JSON.parse(text) as BlizzardAuctionSnapshot;
     if (!Array.isArray(snapshot.auctions)) {
       throw new BlizzardApiError(
         `Battle.net returned a 200 for connected realm ${connectedRealmId} but the payload has ` +
@@ -359,7 +375,13 @@ export class BlizzardService {
     }
 
     snapshot.lastModified = lastModified ?? new Date().toISOString();
-    return { snapshot, source: 'blizzard_api', lastModified: snapshot.lastModified };
+    return {
+      snapshot,
+      source: 'blizzard_api',
+      lastModified: snapshot.lastModified,
+      wireBytes: Number.isFinite(wireBytes) ? wireBytes : null,
+      rawBytes,
+    };
   }
 
   /**
