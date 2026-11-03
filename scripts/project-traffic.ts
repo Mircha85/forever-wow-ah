@@ -112,6 +112,13 @@ interface Measurement {
   writesPerRun: number;
   /** Objects read per realm per run. */
   readsPerRun: number;
+  /**
+   * Bytes the dashboard moves through the CDN each month: a page load
+   * pulls a realm's state.bin, an item click pulls the composed blob.
+   * These bytes cross the CDN twice — once to the browser and once
+   * between the CDN and the function.
+   */
+  dashboardBytesPerMonth: number;
 }
 
 function loadMeasurement(): Measurement {
@@ -163,14 +170,15 @@ function loadMeasurement(): Measurement {
     memoryGB: argNumber('mem-gb', 0.5),
     writesPerRun: 3,
     readsPerRun: 2,
+    // 40 page loads and 200 item clicks a day, for 30 days.
+    dashboardBytesPerMonth:
+      (40 * 440 * 1024 + 200 * 8 * 1024) * 30,
   };
 }
 
 interface Projection {
   runsPerMonth: number;
   invocations: number;
-  /** Data leaving Vercel, in bytes: the uploads to R2. */
-  egressBytes: number;
   cpuHours: number;
   memoryGBHours: number;
   r2ClassA: number;
@@ -178,6 +186,31 @@ interface Projection {
   r2StorageGB: number;
   /** What R2 would charge beyond the free allowance. */
   r2Cost: number;
+  /**
+   * CDN ↔ visitor. The cron calls and the dashboard's responses.
+   *
+   * This is the hop Vercel documents as Fast Data Transfer: "data sent
+   * between the CDN and the visitor's device".
+   */
+  fastDataTransferBytes: number;
+  /**
+   * CDN ↔ function. The request the CDN sends into the function and the
+   * response it sends back.
+   *
+   * This is the hop Vercel documents as Fast Origin Transfer: "data sent
+   * between the CDN and Vercel Functions", incurred "on both the input
+   * and output data transfer when using compute or blob on Vercel".
+   */
+  fastOriginTransferBytes: number;
+  /**
+   * Function ↔ external host: the snapshot from Battle.net and the
+   * archives to and from R2.
+   *
+   * Neither of the two CDN resources above describes this hop, so it is
+   * reported on its own line rather than folded into either meter.
+   */
+  externalEgressBytes: number;
+  externalIngressBytes: number;
   /** Allowances that are certainly exceeded. */
   breaches: string[];
   /** Open questions that would make it worse, if they resolve the wrong way. */
@@ -187,28 +220,56 @@ interface Projection {
 function project(m: Measurement, realms: number, cadenceMinutes: number): Projection {
   const runsPerMonth = realms * ((30 * 24 * 60) / cadenceMinutes);
 
-  const egressBytes = runsPerMonth * m.uploadBytes;
   const cpuHours = (runsPerMonth * m.cpuSec) / 3600;
   const memoryGBHours = runsPerMonth * m.memoryGB * (m.durationSec / 3600);
   const r2ClassA = runsPerMonth * m.writesPerRun;
   const r2ClassB = runsPerMonth * m.readsPerRun;
   const r2StorageGB = (realms * (m.uploadBytes + m.readBackBytes)) / 1024 ** 3;
 
+  // One ingestion run: the cron POSTs a few dozen bytes into the CDN,
+  // the CDN calls the function, the function answers with a small JSON
+  // summary. Both of those hops are tiny.
+  const invocationRequestBytes = 200;
+  const invocationResponseBytes = 1200;
+
+  // The dashboard: a page load pulls a realm's state.bin, an item click
+  // pulls the composed item blob. Both pass through the CDN twice — once
+  // on the way to the browser (Fast Data Transfer) and once between the
+  // CDN and the function (Fast Origin Transfer).
+  const dashboardBytes = m.dashboardBytesPerMonth;
+
+  const fastDataTransferBytes =
+    runsPerMonth * (invocationRequestBytes + invocationResponseBytes) + dashboardBytes;
+  const fastOriginTransferBytes =
+    runsPerMonth * (invocationRequestBytes + invocationResponseBytes) + dashboardBytes;
+
+  const externalEgressBytes = runsPerMonth * m.uploadBytes;
+  const externalIngressBytes = runsPerMonth * (m.downloadBytes + m.readBackBytes);
+
   const breaches: string[] = [];
   const caveats: string[] = [];
 
-  if (egressBytes / 1024 ** 3 > VERCEL.fastDataTransferFreeGB) {
+  if (fastDataTransferBytes / 1024 ** 3 > VERCEL.fastDataTransferFreeGB) {
     breaches.push(
-      `Fast Data Transfer over by ${(egressBytes / 1024 ** 3 - VERCEL.fastDataTransferFreeGB).toFixed(0)} GB`
+      `Fast Data Transfer over by ` +
+        `${((fastDataTransferBytes / 1024 ** 3) - VERCEL.fastDataTransferFreeGB).toFixed(0)} GB`
     );
   }
-  if (egressBytes / 1024 ** 3 > VERCEL.fastOriginTransferFreeGB) {
-    // Not a breach: it depends on whether a function's call to an
-    // external host counts as origin transfer. Reported as an open
-    // question rather than a fact, because it changes the answer.
+  if (fastOriginTransferBytes / 1024 ** 3 > VERCEL.fastOriginTransferFreeGB) {
+    breaches.push(
+      `Fast Origin Transfer over by ` +
+        `${((fastOriginTransferBytes / 1024 ** 3) - VERCEL.fastOriginTransferFreeGB).toFixed(0)} GB`
+    );
+  }
+  if (externalEgressBytes / 1024 ** 3 > VERCEL.fastDataTransferFreeGB) {
+    // The CDN resources above describe two hops, and neither is this one.
+    // If Vercel meters a function's outbound traffic to an external host
+    // as Fast Data Transfer, this becomes a breach. The pasted
+    // documentation does not say, so it is reported as an open question
+    // and not folded into the verdict.
     caveats.push(
-      `if function→R2 egress is Origin Transfer, over by ` +
-        `${(egressBytes / 1024 ** 3 - VERCEL.fastOriginTransferFreeGB).toFixed(0)} GB`
+      `if function→R2 egress is metered as Fast Data Transfer, over by ` +
+        `${((externalEgressBytes / 1024 ** 3) - VERCEL.fastDataTransferFreeGB).toFixed(0)} GB`
     );
   }
   if (cpuHours > VERCEL.activeCpuHoursFree) {
@@ -239,7 +300,10 @@ function project(m: Measurement, realms: number, cadenceMinutes: number): Projec
   return {
     runsPerMonth,
     invocations: runsPerMonth,
-    egressBytes,
+    fastDataTransferBytes,
+    fastOriginTransferBytes,
+    externalEgressBytes,
+    externalIngressBytes,
     cpuHours,
     memoryGBHours,
     r2ClassA,
@@ -273,11 +337,12 @@ console.log(`\nProjection for ${realmCount} realms\n`);
 console.log(
   'cadence'.padEnd(9) +
     'runs/mo'.padStart(10) +
-    'egress'.padStart(10) +
+    'FDT'.padStart(8) +
+    'FOT'.padStart(8) +
+    'external'.padStart(10) +
     'CPU-hr'.padStart(9) +
     'mem GB-hr'.padStart(11) +
     'R2 A'.padStart(8) +
-    'R2 B'.padStart(8) +
     'R2 cost'.padStart(9) +
     '  verdict'
 );
@@ -287,17 +352,22 @@ for (const cadence of cadences) {
   console.log(
     `${cadence}m`.padEnd(9) +
       Math.round(p.runsPerMonth).toLocaleString().padStart(10) +
-      `${(p.egressBytes / 1024 ** 3).toFixed(0)} GB`.padStart(10) +
+      `${(p.fastDataTransferBytes / 1024 ** 3).toFixed(1)}G`.padStart(8) +
+      `${(p.fastOriginTransferBytes / 1024 ** 3).toFixed(1)}G`.padStart(8) +
+      `${(p.externalEgressBytes / 1024 ** 3).toFixed(0)} GB`.padStart(10) +
       p.cpuHours.toFixed(1).padStart(9) +
       Math.round(p.memoryGBHours).toLocaleString().padStart(11) +
       `${(p.r2ClassA / 1e6).toFixed(2)}M`.padStart(8) +
-      `${(p.r2ClassB / 1e6).toFixed(2)}M`.padStart(8) +
       money(p.r2Cost).padStart(9) +
       '  ' +
       (p.breaches.length === 0 ? 'fits' : p.breaches[0]) +
       (p.caveats.length > 0 && p.breaches.length === 0 ? ' (+ open question)' : '')
   );
 }
+
+console.log('\n  FDT = Fast Data Transfer (CDN ↔ visitor), 100 GB free');
+console.log('  FOT = Fast Origin Transfer (CDN ↔ function), 10 GB free');
+console.log('  external = function ↔ Battle.net / R2 — a hop neither CDN resource describes');
 
 const fitting = cadences.filter((cadence) => project(m, realmCount, cadence).breaches.length === 0);
 console.log(
@@ -321,7 +391,14 @@ console.log('\nWhat binds first');
 for (const cadence of cadences) {
   const limits: Array<[string, number]> = [];
   const p = project(m, realmCount, cadence);
-  limits.push(['Fast Data Transfer', VERCEL.fastDataTransferFreeGB / (p.egressBytes / 1024 ** 3)]);
+  limits.push([
+    'Fast Data Transfer',
+    VERCEL.fastDataTransferFreeGB / (p.fastDataTransferBytes / 1024 ** 3),
+  ]);
+  limits.push([
+    'Fast Origin Transfer',
+    VERCEL.fastOriginTransferFreeGB / (p.fastOriginTransferBytes / 1024 ** 3),
+  ]);
   limits.push(['Active CPU', VERCEL.activeCpuHoursFree / p.cpuHours]);
   limits.push(['Provisioned Memory', VERCEL.provisionedMemoryGBHoursFree / p.memoryGBHours]);
   limits.push(['R2 Class A', R2.classAFree / p.r2ClassA]);
