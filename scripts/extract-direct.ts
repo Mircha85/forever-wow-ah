@@ -19,9 +19,13 @@ import * as path from 'node:path';
 
 import { BlizzardService } from '../src/services/blizzard';
 import { AuctionAggregator } from '../src/services/aggregator';
+import { auctionNamespace, resolveProduct } from '../src/services/product';
 import { R2Service } from '../src/services/r2';
 
-const ROOT = path.resolve(__dirname, '..');
+// The project root. Not __dirname: Node re-parses a TypeScript script as an ES
+// module when it contains import syntax, and __dirname does not exist there.
+// These scripts are run from the repository root; PROJECT_ROOT overrides that.
+const ROOT = process.env.PROJECT_ROOT ?? process.cwd();
 
 // Load .env.local (optional — in Cloud Run, env vars come from --set-env-vars + --set-secrets)
 try {
@@ -69,9 +73,12 @@ if (limitSingleId !== undefined) {
 
 const CONCURRENCY = 2;
 const RETRIES = 3;
-// BLIZZARD_PRODUCT env (retail|forever). Default retail until Nov 4 2026.
-const PRODUCT: 'retail' | 'forever' =
-  process.env.BLIZZARD_PRODUCT === 'forever' ? 'forever' : 'retail';
+// BLIZZARD_PRODUCT env (retail|forever). The same resolver the pipeline
+// uses, so the namespace queried and the R2 prefix written always agree.
+// Default retail: WoW: Forever's auction namespace only starts answering
+// on its launch day, and pointing the extraction at a namespace that 404s
+// would fail every realm.
+const PRODUCT = resolveProduct();
 
 const SUMMARY_PATH = path.join(ROOT, 'extraction-direct-summary.json');
 
@@ -200,7 +207,9 @@ async function main() {
     perRealm: {},
   };
 
-  // One BlizzardService per region (token cache + namespace config)
+  // One BlizzardService per region (token cache + namespace config).
+  // The namespace comes from the product, so the extraction talks to the
+  // same game the pipeline would.
   const blizzards = new Map<string, BlizzardService>();
   const getBlizzard = (region: 'eu' | 'us'): BlizzardService => {
     if (!blizzards.has(region)) {
@@ -209,7 +218,7 @@ async function main() {
         new BlizzardService({
           region,
           locale: 'en_US',
-          namespace: `dynamic-${region}`,
+          namespace: auctionNamespace(PRODUCT, region),
         })
       );
     }

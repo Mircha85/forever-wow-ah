@@ -2,6 +2,7 @@ import { type NextRequest, NextResponse } from 'next/server';
 import { BlizzardService } from '@/src/services/blizzard';
 import { R2Service } from '@/src/services/r2';
 import { AuctionAggregator } from '@/src/services/aggregator';
+import { resolveProduct } from '@/src/services/product';
 import { recordRealmName } from '@/src/services/realmNames';
 import { warmMetadataForIds } from '@/src/services/itemMetadataCache';
 import {
@@ -91,8 +92,9 @@ export async function POST(req: NextRequest) {
       connectedRealmId,
       true
     );
-    const product: 'retail' | 'forever' =
-      process.env.BLIZZARD_PRODUCT === 'forever' ? 'forever' : 'retail';
+    // One product decides both the namespace that was queried and the
+    // prefix the result is stored under.
+    const product = resolveProduct();
     const region = blizzard.getRegion() as 'eu' | 'us';
     const result = await AuctionAggregator.processSnapshot(
       product,

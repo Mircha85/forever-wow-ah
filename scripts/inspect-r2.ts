@@ -12,7 +12,6 @@
  *   R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_BUCKET_NAME
  */
 
-import * as path from 'node:path';
 
 import {
   ListObjectsV2Command,
@@ -21,7 +20,10 @@ import {
 
 import { loadEnvFile, requireR2Env } from './lib/env';
 
-const ROOT = path.resolve(__dirname, '..');
+// The project root. Not __dirname: Node re-parses a TypeScript script as an ES
+// module when it contains import syntax, and __dirname does not exist there.
+// These scripts are run from the repository root; PROJECT_ROOT overrides that.
+const ROOT = process.env.PROJECT_ROOT ?? process.cwd();
 
 /** R2 Class B — reads, HEADs and deletes. */
 const CLASS_B_PRICE_PER_MILLION = 0.36;

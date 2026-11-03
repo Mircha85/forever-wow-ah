@@ -1,4 +1,5 @@
 import { type BlizzardAuctionSnapshot, type WowItemMetadata, type ItemQuality } from '../types/auction';
+import { auctionNamespace, itemNamespace, resolveProduct } from './product';
 
 /**
  * Map Blizzard `quality.type` strings to the numeric quality code the
@@ -117,15 +118,15 @@ export class BlizzardService {
     this.region = config?.region || process.env.BLIZZARD_REGION || 'eu';
     this.locale = config?.locale || process.env.BLIZZARD_LOCALE || 'en_US';
 
-    // Auction namespace (live data, mutations). WoW: Forever is the
-    // Anniversary line, served from `dynamic-classicann-{region}`. The
-    // previous default was `dynamic-{region}` — the Retail namespace —
-    // a request that succeeds against the wrong game rather than
-    // failing, which is the worse outcome.
+    // Auction namespace (live data, mutations). Derived from the product
+    // so that the namespace queried and the R2 prefix written always
+    // describe the same game. An explicit `BLIZZARD_NAMESPACE` still
+    // wins, for the days when a namespace needs to be pointed somewhere
+    // else by hand.
     this.namespace =
       config?.namespace ||
       process.env.BLIZZARD_NAMESPACE ||
-      `dynamic-classicann-${this.region}`;
+      auctionNamespace(resolveProduct(), this.region);
 
     // Item metadata namespace (static catalog). Lives separately from
     // the auction namespace because the auction API only ships items
@@ -134,7 +135,7 @@ export class BlizzardService {
     this.itemNamespace =
       (config as unknown as { itemNamespace?: string } | undefined)?.itemNamespace ||
       process.env.BLIZZARD_ITEM_NAMESPACE ||
-      `static-${this.region}`;
+      itemNamespace(this.region);
   }
 
   /**
@@ -160,9 +161,11 @@ export class BlizzardService {
    */
   public async fetchConnectedRealmName(connectedRealmId: number): Promise<string | null> {
     if (!this.hasCredentials()) return null;
+    // The instance's own namespace, not a hardcoded one: the connected
+    // realm endpoint answers for the game this instance is pointed at.
     const url =
       `https://${this.region}.api.blizzard.com/data/wow/connected-realm/${connectedRealmId}` +
-      `?namespace=dynamic-${this.region}&locale=${this.locale}`;
+      `?namespace=${this.namespace}&locale=${this.locale}`;
     try {
       const response = await fetch(url, {
         headers: { Authorization: `Bearer ${await this.getAccessToken()}` },
